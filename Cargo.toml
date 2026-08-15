@@ -1,0 +1,23 @@
+[workspace]
+members = [
+    "crates/image_editor_core",
+    "crates/image_editor_codecs",
+    "crates/image_editor_platform",
+    "crates/image_editor_desktop",
+]
+default-members = ["crates/image_editor_desktop"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+authors = ["Image Editor Contributors"]
+repository = "https://example.invalid/image-editor"
+
+[workspace.dependencies]
+eframe = { version = "=0.31.1", default-features = false, features = ["default_fonts", "wgpu"] }
+image = { version = "=0.25.6", default-features = false, features = ["jpeg", "png", "tiff"] }
+libheif-rs = { version = "=1.1.0", default-features = false }
+rfd = { version = "=0.15.3", default-features = false }

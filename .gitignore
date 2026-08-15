@@ -47,6 +47,7 @@ dist/
 build/
 _build/
 output/
+target/
 /images/
 *.m4
 *.P[lo|o]

@@ -1,0 +1,22 @@
+[package]
+name = "image_editor_codecs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Portable and optional image codec adapters for Image Editor"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["portable-codecs"]
+portable-codecs = ["dep:image"]
+heic = ["dep:libheif-rs"]
+
+[dependencies]
+image_editor_core = { path = "../image_editor_core" }
+image = { workspace = true, optional = true }
+libheif-rs = { workspace = true, optional = true }

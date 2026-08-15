@@ -1,0 +1,27 @@
+[package]
+name = "image_editor_desktop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Desktop host boundary for Image Editor"
+
+[[bin]]
+name = "image-editor"
+path = "src/main.rs"
+
+[features]
+default = ["portable-codecs", "native-window"]
+native-window = ["dep:eframe"]
+portable-codecs = ["image_editor_codecs/portable-codecs"]
+heic = ["image_editor_codecs/heic"]
+xdg-portal = ["image_editor_platform/xdg-portal"]
+gtk = ["image_editor_platform/gtk"]
+
+[dependencies]
+eframe = { workspace = true, optional = true }
+image_editor_codecs = { path = "../image_editor_codecs", default-features = false }
+image_editor_core = { path = "../image_editor_core" }
+image_editor_platform = { path = "../image_editor_platform" }

@@ -1,0 +1,21 @@
+[package]
+name = "image_editor_platform"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "macOS and Linux integration adapters for Image Editor"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = []
+xdg-portal = ["dep:rfd", "rfd/async-std", "rfd/xdg-portal"]
+gtk = ["dep:rfd", "rfd/gtk3"]
+
+[dependencies]
+image_editor_core = { path = "../image_editor_core" }
+rfd = { workspace = true, optional = true }

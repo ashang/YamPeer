@@ -1,0 +1,344 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1.1 Create the pinned Cargo workspace and crate boundaries": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802085067
+      },
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802106505
+      },
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802989327
+      }
+    ],
+    "1.2 Implement core value types and invariant-enforcing constructors": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802085206
+      },
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802999561
+      },
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786803321604
+      }
+    ],
+    "1.3 Write core model and invariant unit tests": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802085248
+      },
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786803331541
+      },
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786805741151
+      }
+    ],
+    "2.1 Implement the codec registry and startup capability snapshot": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802085291
+      },
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786803331574
+      },
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786805742082
+      }
+    ],
+    "2.2 Implement pure direct-folder collection planning": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802085339
+      },
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786805751915
+      }
+    ],
+    "2.3 Write property test for capability-filtered collection planning": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802085374
+      }
+    ],
+    "2.4 Implement pure capability-to-view/export projection": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802085419
+      }
+    ],
+    "2.5 Write property test for conservative capability projection": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802085474
+      }
+    ],
+    "3.1 Implement immutable editor state, reducer, and revision-token effects": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802085514
+      }
+    ],
+    "3.2 Implement selection and navigation planning with atomic decode completion": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802085548
+      }
+    ],
+    "3.3 Write property test for atomic candidate activation": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802085591
+      }
+    ],
+    "3.4 Write property test for navigation ordering and boundaries": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802085641
+      }
+    ],
+    "4.1 Implement canonical decode normalization and history replay pipeline": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802085680
+      }
+    ],
+    "4.2 Implement fixed-integer flip and rotation operations": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802085712
+      }
+    ],
+    "4.3 Write property test for geometric mappings": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802085747
+      }
+    ],
+    "4.4 Implement source-coordinate crop draft, validation, confirmation, and cancellation": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802085772
+      }
+    ],
+    "4.5 Write property test for crop transaction behavior": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802085804
+      }
+    ],
+    "5.1 Implement brightness and contrast draft interaction and deterministic arithmetic": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802085846
+      }
+    ],
+    "5.2 Write property test for adjustment clamping and commits": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802085881
+      }
+    ],
+    "5.3 Implement per-image undo and redo reducer transitions": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802085936
+      }
+    ],
+    "5.4 Write property test for reversible, branch-safe per-image history": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802085971
+      }
+    ],
+    "5.5 Implement pure macOS/Linux shortcut resolution": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802086009
+      }
+    ],
+    "5.6 Write property test for platform-invariant shortcut semantics": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802086041
+      }
+    ],
+    "6. Checkpoint - Ensure core tests pass": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802086075
+      }
+    ],
+    "7.1 Implement bounded codec decode/encode adapters": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802086112
+      }
+    ],
+    "7.2 Write codec integration tests with real fixtures": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802086142
+      }
+    ],
+    "7.3 Implement file identity checks and export planning": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802086174
+      }
+    ],
+    "7.4 Write property test for non-replacement export planning": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802086205
+      }
+    ],
+    "7.5 Implement create-new export execution and typed completion handling": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802086251
+      }
+    ],
+    "7.6 Write filesystem/export integration tests": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802086308
+      }
+    ],
+    "8.1 Implement macOS/Linux platform capability, dialog, and filesystem adapters": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802086338
+      }
+    ],
+    "8.2 Write platform adapter integration tests": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802086382
+      }
+    ],
+    "8.3 Implement the eframe application host and worker orchestration": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802086445
+      }
+    ],
+    "8.4 Implement the capability-aware egui workspace and preview texture cache": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802086489
+      }
+    ],
+    "8.5 Write desktop integration and visual regression tests": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802086524
+      }
+    ],
+    "9.1 Implement conformance fixtures, deterministic result serialization, and cross-platform pipeline harness": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802086590
+      }
+    ],
+    "9.2 Write property test for shared pipeline equivalence": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802086667
+      }
+    ],
+    "9.3 Add target-specific package manifests and capability manifest generation": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802086691
+      }
+    ],
+    "9.4 Write packaging smoke and cross-platform integration tests": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802086732
+      }
+    ],
+    "9.5 Wire the final application composition and CI quality gates": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802086770
+      }
+    ],
+    "10. Final checkpoint - Ensure all tests pass": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786802086800
+      }
+    ],
+    "1. Establish the Rust workspace and shared domain contracts": [
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786805741245
+      }
+    ]
+  }
+}
