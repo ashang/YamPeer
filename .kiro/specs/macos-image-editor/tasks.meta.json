@@ -79,6 +79,11 @@
         "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
         "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
         "timestamp": 1786805751915
+      },
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786805916924
       }
     ],
     "2.3 Write property test for capability-filtered collection planning": [
@@ -86,6 +91,16 @@
         "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
         "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
         "timestamp": 1786802085374
+      },
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786805926704
+      },
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786806079451
       }
     ],
     "2.4 Implement pure capability-to-view/export projection": [
@@ -93,6 +108,16 @@
         "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
         "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
         "timestamp": 1786802085419
+      },
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786805926860
+      },
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786806079521
       }
     ],
     "2.5 Write property test for conservative capability projection": [
@@ -100,6 +125,11 @@
         "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
         "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
         "timestamp": 1786802085474
+      },
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786806090548
       }
     ],
     "3.1 Implement immutable editor state, reducer, and revision-token effects": [
@@ -107,6 +137,16 @@
         "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
         "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
         "timestamp": 1786802085514
+      },
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786806090648
+      },
+      {
+        "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
+        "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
+        "timestamp": 1786806417222
       }
     ],
     "3.2 Implement selection and navigation planning with atomic decode completion": [
@@ -114,6 +154,16 @@
         "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
         "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
         "timestamp": 1786802085548
+      },
+      {
+        "executionId": "c496489d-499d-4c7e-b8fe-77b98d200aac",
+        "chatSessionId": "sess_d9a302d1-0065-41b8-a7ea-90b32035e4c6",
+        "timestamp": 1786806867670
+      },
+      {
+        "executionId": "c496489d-499d-4c7e-b8fe-77b98d200aac",
+        "chatSessionId": "sess_d9a302d1-0065-41b8-a7ea-90b32035e4c6",
+        "timestamp": 1786807026423
       }
     ],
     "3.3 Write property test for atomic candidate activation": [
@@ -121,6 +171,16 @@
         "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
         "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
         "timestamp": 1786802085591
+      },
+      {
+        "executionId": "c496489d-499d-4c7e-b8fe-77b98d200aac",
+        "chatSessionId": "sess_d9a302d1-0065-41b8-a7ea-90b32035e4c6",
+        "timestamp": 1786807035913
+      },
+      {
+        "executionId": "c496489d-499d-4c7e-b8fe-77b98d200aac",
+        "chatSessionId": "sess_d9a302d1-0065-41b8-a7ea-90b32035e4c6",
+        "timestamp": 1786807583432
       }
     ],
     "3.4 Write property test for navigation ordering and boundaries": [
@@ -128,6 +188,16 @@
         "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
         "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
         "timestamp": 1786802085641
+      },
+      {
+        "executionId": "c496489d-499d-4c7e-b8fe-77b98d200aac",
+        "chatSessionId": "sess_d9a302d1-0065-41b8-a7ea-90b32035e4c6",
+        "timestamp": 1786807036196
+      },
+      {
+        "executionId": "c496489d-499d-4c7e-b8fe-77b98d200aac",
+        "chatSessionId": "sess_d9a302d1-0065-41b8-a7ea-90b32035e4c6",
+        "timestamp": 1786807583540
       }
     ],
     "4.1 Implement canonical decode normalization and history replay pipeline": [
@@ -135,6 +205,16 @@
         "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
         "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
         "timestamp": 1786802085680
+      },
+      {
+        "executionId": "c496489d-499d-4c7e-b8fe-77b98d200aac",
+        "chatSessionId": "sess_d9a302d1-0065-41b8-a7ea-90b32035e4c6",
+        "timestamp": 1786807036252
+      },
+      {
+        "executionId": "c496489d-499d-4c7e-b8fe-77b98d200aac",
+        "chatSessionId": "sess_d9a302d1-0065-41b8-a7ea-90b32035e4c6",
+        "timestamp": 1786807583574
       }
     ],
     "4.2 Implement fixed-integer flip and rotation operations": [
@@ -142,6 +222,16 @@
         "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
         "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
         "timestamp": 1786802085712
+      },
+      {
+        "executionId": "c496489d-499d-4c7e-b8fe-77b98d200aac",
+        "chatSessionId": "sess_d9a302d1-0065-41b8-a7ea-90b32035e4c6",
+        "timestamp": 1786807593467
+      },
+      {
+        "executionId": "c496489d-499d-4c7e-b8fe-77b98d200aac",
+        "chatSessionId": "sess_d9a302d1-0065-41b8-a7ea-90b32035e4c6",
+        "timestamp": 1786807707138
       }
     ],
     "4.3 Write property test for geometric mappings": [
@@ -149,6 +239,16 @@
         "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
         "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
         "timestamp": 1786802085747
+      },
+      {
+        "executionId": "c496489d-499d-4c7e-b8fe-77b98d200aac",
+        "chatSessionId": "sess_d9a302d1-0065-41b8-a7ea-90b32035e4c6",
+        "timestamp": 1786807716097
+      },
+      {
+        "executionId": "c496489d-499d-4c7e-b8fe-77b98d200aac",
+        "chatSessionId": "sess_d9a302d1-0065-41b8-a7ea-90b32035e4c6",
+        "timestamp": 1786807944829
       }
     ],
     "4.4 Implement source-coordinate crop draft, validation, confirmation, and cancellation": [
@@ -156,6 +256,16 @@
         "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
         "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
         "timestamp": 1786802085772
+      },
+      {
+        "executionId": "c496489d-499d-4c7e-b8fe-77b98d200aac",
+        "chatSessionId": "sess_d9a302d1-0065-41b8-a7ea-90b32035e4c6",
+        "timestamp": 1786807716148
+      },
+      {
+        "executionId": "c496489d-499d-4c7e-b8fe-77b98d200aac",
+        "chatSessionId": "sess_d9a302d1-0065-41b8-a7ea-90b32035e4c6",
+        "timestamp": 1786807944921
       }
     ],
     "4.5 Write property test for crop transaction behavior": [
@@ -163,6 +273,16 @@
         "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
         "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
         "timestamp": 1786802085804
+      },
+      {
+        "executionId": "c496489d-499d-4c7e-b8fe-77b98d200aac",
+        "chatSessionId": "sess_d9a302d1-0065-41b8-a7ea-90b32035e4c6",
+        "timestamp": 1786807953971
+      },
+      {
+        "executionId": "c496489d-499d-4c7e-b8fe-77b98d200aac",
+        "chatSessionId": "sess_d9a302d1-0065-41b8-a7ea-90b32035e4c6",
+        "timestamp": 1786808070222
       }
     ],
     "5.1 Implement brightness and contrast draft interaction and deterministic arithmetic": [
@@ -170,6 +290,16 @@
         "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
         "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
         "timestamp": 1786802085846
+      },
+      {
+        "executionId": "c496489d-499d-4c7e-b8fe-77b98d200aac",
+        "chatSessionId": "sess_d9a302d1-0065-41b8-a7ea-90b32035e4c6",
+        "timestamp": 1786807954214
+      },
+      {
+        "executionId": "c496489d-499d-4c7e-b8fe-77b98d200aac",
+        "chatSessionId": "sess_d9a302d1-0065-41b8-a7ea-90b32035e4c6",
+        "timestamp": 1786808070287
       }
     ],
     "5.2 Write property test for adjustment clamping and commits": [
@@ -177,6 +307,11 @@
         "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
         "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
         "timestamp": 1786802085881
+      },
+      {
+        "executionId": "c496489d-499d-4c7e-b8fe-77b98d200aac",
+        "chatSessionId": "sess_d9a302d1-0065-41b8-a7ea-90b32035e4c6",
+        "timestamp": 1786808080919
       }
     ],
     "5.3 Implement per-image undo and redo reducer transitions": [
@@ -184,6 +319,16 @@
         "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
         "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
         "timestamp": 1786802085936
+      },
+      {
+        "executionId": "c496489d-499d-4c7e-b8fe-77b98d200aac",
+        "chatSessionId": "sess_d9a302d1-0065-41b8-a7ea-90b32035e4c6",
+        "timestamp": 1786808080978
+      },
+      {
+        "executionId": "c496489d-499d-4c7e-b8fe-77b98d200aac",
+        "chatSessionId": "sess_d9a302d1-0065-41b8-a7ea-90b32035e4c6",
+        "timestamp": 1786808182740
       }
     ],
     "5.4 Write property test for reversible, branch-safe per-image history": [
@@ -191,6 +336,16 @@
         "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
         "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
         "timestamp": 1786802085971
+      },
+      {
+        "executionId": "043d917e-ba1c-41f6-acb6-27006c84461b",
+        "chatSessionId": "sess_e687ad11-f59d-408e-b081-d2c90fbca6d6",
+        "timestamp": 1786843138874
+      },
+      {
+        "executionId": "043d917e-ba1c-41f6-acb6-27006c84461b",
+        "chatSessionId": "sess_e687ad11-f59d-408e-b081-d2c90fbca6d6",
+        "timestamp": 1786843304282
       }
     ],
     "5.5 Implement pure macOS/Linux shortcut resolution": [
@@ -198,6 +353,16 @@
         "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
         "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
         "timestamp": 1786802086009
+      },
+      {
+        "executionId": "043d917e-ba1c-41f6-acb6-27006c84461b",
+        "chatSessionId": "sess_e687ad11-f59d-408e-b081-d2c90fbca6d6",
+        "timestamp": 1786843138961
+      },
+      {
+        "executionId": "043d917e-ba1c-41f6-acb6-27006c84461b",
+        "chatSessionId": "sess_e687ad11-f59d-408e-b081-d2c90fbca6d6",
+        "timestamp": 1786843308538
       }
     ],
     "5.6 Write property test for platform-invariant shortcut semantics": [
@@ -205,6 +370,16 @@
         "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
         "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
         "timestamp": 1786802086041
+      },
+      {
+        "executionId": "043d917e-ba1c-41f6-acb6-27006c84461b",
+        "chatSessionId": "sess_e687ad11-f59d-408e-b081-d2c90fbca6d6",
+        "timestamp": 1786843317475
+      },
+      {
+        "executionId": "043d917e-ba1c-41f6-acb6-27006c84461b",
+        "chatSessionId": "sess_e687ad11-f59d-408e-b081-d2c90fbca6d6",
+        "timestamp": 1786843501550
       }
     ],
     "6. Checkpoint - Ensure core tests pass": [
@@ -219,6 +394,11 @@
         "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
         "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
         "timestamp": 1786802086112
+      },
+      {
+        "executionId": "043d917e-ba1c-41f6-acb6-27006c84461b",
+        "chatSessionId": "sess_e687ad11-f59d-408e-b081-d2c90fbca6d6",
+        "timestamp": 1786843321798
       }
     ],
     "7.2 Write codec integration tests with real fixtures": [
@@ -226,6 +406,11 @@
         "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
         "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
         "timestamp": 1786802086142
+      },
+      {
+        "executionId": "f935fe2e-88cd-4126-bb2a-af834a1438f1",
+        "chatSessionId": "sess_861cc195-70e9-44b4-8a0b-9ad8f198476f",
+        "timestamp": 1786844301748
       }
     ],
     "7.3 Implement file identity checks and export planning": [
@@ -233,6 +418,16 @@
         "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
         "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
         "timestamp": 1786802086174
+      },
+      {
+        "executionId": "f935fe2e-88cd-4126-bb2a-af834a1438f1",
+        "chatSessionId": "sess_861cc195-70e9-44b4-8a0b-9ad8f198476f",
+        "timestamp": 1786844302037
+      },
+      {
+        "executionId": "f935fe2e-88cd-4126-bb2a-af834a1438f1",
+        "chatSessionId": "sess_861cc195-70e9-44b4-8a0b-9ad8f198476f",
+        "timestamp": 1786844517917
       }
     ],
     "7.4 Write property test for non-replacement export planning": [
@@ -240,6 +435,11 @@
         "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
         "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
         "timestamp": 1786802086205
+      },
+      {
+        "executionId": "5a53a38c-0d68-41ed-a0ea-2e5bf0d4e340",
+        "chatSessionId": "sess_15f23372-792a-4b8c-9e0e-6ca711b044f1",
+        "timestamp": 1786852459160
       }
     ],
     "7.5 Implement create-new export execution and typed completion handling": [
@@ -247,6 +447,11 @@
         "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
         "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
         "timestamp": 1786802086251
+      },
+      {
+        "executionId": "5a53a38c-0d68-41ed-a0ea-2e5bf0d4e340",
+        "chatSessionId": "sess_15f23372-792a-4b8c-9e0e-6ca711b044f1",
+        "timestamp": 1786852464649
       }
     ],
     "7.6 Write filesystem/export integration tests": [
@@ -338,6 +543,20 @@
         "executionId": "d399a2ff-6b95-48be-ac5c-6f2bd7f5469c",
         "chatSessionId": "sess_47ef4f2b-f243-45e9-9746-fe9dcafea4a2",
         "timestamp": 1786805741245
+      }
+    ],
+    "3. Add the reducer, asynchronous-effect protocol, and image navigation": [
+      {
+        "executionId": "c496489d-499d-4c7e-b8fe-77b98d200aac",
+        "chatSessionId": "sess_d9a302d1-0065-41b8-a7ea-90b32035e4c6",
+        "timestamp": 1786807583617
+      }
+    ],
+    "4. Implement deterministic canonical image editing and crop interaction": [
+      {
+        "executionId": "c496489d-499d-4c7e-b8fe-77b98d200aac",
+        "chatSessionId": "sess_d9a302d1-0065-41b8-a7ea-90b32035e4c6",
+        "timestamp": 1786808070333
       }
     ]
   }

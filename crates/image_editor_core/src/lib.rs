@@ -484,6 +484,102 @@ impl SourceIdentity {
     }
 }
 
+/// A filesystem resolution of a requested export target before a writer opens.
+///
+/// A missing path is eligible for an exclusive create. Existing regular files
+/// are never eligible, even when the platform cannot provide file metadata.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExportTargetResolution {
+    Missing,
+    ExistingRegular { identity: Option<FileIdentity> },
+    ExistingOther,
+}
+
+impl ExportTargetResolution {
+    pub const fn missing() -> Self {
+        Self::Missing
+    }
+
+    pub const fn existing_regular(identity: Option<FileIdentity>) -> Self {
+        Self::ExistingRegular { identity }
+    }
+
+    pub const fn existing_other() -> Self {
+        Self::ExistingOther
+    }
+}
+
+/// An immutable, validated snapshot that authorizes one export attempt.
+///
+/// The filesystem adapter must resolve the target before constructing this
+/// value. Writer code consumes this plan rather than the unvalidated picker
+/// path, so conflicts cannot reach a writer-open operation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExportPlan {
+    source_identity: SourceIdentity,
+    document_revision: Revision,
+    target: AbsolutePath,
+    format: ImageFormat,
+}
+
+impl ExportPlan {
+    pub fn validate(
+        source_identity: SourceIdentity,
+        document_revision: Revision,
+        target: AbsolutePath,
+        format: ImageFormat,
+        target_resolution: ExportTargetResolution,
+    ) -> Result<Self> {
+        let identifies_source = target == *source_identity.absolute_path()
+            || matches!(
+                &target_resolution,
+                ExportTargetResolution::ExistingRegular {
+                    identity: Some(target_identity),
+                } if source_identity.file_identity() == Some(target_identity)
+            );
+
+        if identifies_source {
+            return Err(ApplicationError::ExportTargetConflict {
+                path: target,
+                kind: TargetConflict::SourceImage,
+            });
+        }
+
+        if matches!(
+            target_resolution,
+            ExportTargetResolution::ExistingRegular { .. }
+        ) {
+            return Err(ApplicationError::ExportTargetConflict {
+                path: target,
+                kind: TargetConflict::ExistingLocalFile,
+            });
+        }
+
+        Ok(Self {
+            source_identity,
+            document_revision,
+            target,
+            format,
+        })
+    }
+
+    pub fn source_identity(&self) -> &SourceIdentity {
+        &self.source_identity
+    }
+
+    pub const fn document_revision(&self) -> Revision {
+        self.document_revision
+    }
+
+    pub fn target(&self) -> &AbsolutePath {
+        &self.target
+    }
+
+    pub const fn format(&self) -> ImageFormat {
+        self.format
+    }
+}
+
 /// The stable identifier used to keep document histories distinct.
 pub type ImageId = SourceIdentity;
 
@@ -793,6 +889,136 @@ pub fn plan_folder_enumeration(
     })
 }
 
+/// A user action whose availability depends on a platform integration or an
+/// image encoder. Image selection is represented by `selectable_images`, where
+/// an entry exists only while its own decoder is available.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum DependentOperation {
+    OpenFolder,
+    Export,
+}
+
+/// An operation that the workspace must render disabled, together with the
+/// exact unavailable capabilities that caused the disabled state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisabledOperation {
+    pub operation: DependentOperation,
+    pub unavailable_capabilities: Vec<CapabilityName>,
+}
+
+/// Pure, session-stable data for rendering capability-aware workspace controls.
+///
+/// The projection preserves independent decode, encode, and dialog facts: a
+/// format's decoder controls selectable entries, its encoder controls export
+/// choices, and a missing dialog disables only the operation requiring it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CapabilityProjection {
+    selectable_images: Vec<CollectionEntry>,
+    export_formats: Vec<ImageFormat>,
+    enabled_operations: Vec<DependentOperation>,
+    disabled_operations: Vec<DisabledOperation>,
+    availability_messages: Vec<VisibleNotice>,
+}
+
+impl CapabilityProjection {
+    pub fn selectable_images(&self) -> &[CollectionEntry] {
+        &self.selectable_images
+    }
+
+    pub fn export_formats(&self) -> &[ImageFormat] {
+        &self.export_formats
+    }
+
+    pub fn enabled_operations(&self) -> &[DependentOperation] {
+        &self.enabled_operations
+    }
+
+    pub fn disabled_operations(&self) -> &[DisabledOperation] {
+        &self.disabled_operations
+    }
+
+    pub fn availability_messages(&self) -> &[VisibleNotice] {
+        &self.availability_messages
+    }
+
+    pub fn is_operation_enabled(&self, operation: DependentOperation) -> bool {
+        self.enabled_operations.contains(&operation)
+    }
+}
+
+/// Projects independent startup capabilities and an optional folder result into
+/// the selectable image entries, available export formats, operation state, and
+/// non-blocking messages required by the workspace.
+///
+/// `folder_plan` is not installed or mutated. It is filtered again against the
+/// immutable snapshot so the projection remains conservative even if callers
+/// provide a plan produced before a capability downgrade.
+pub fn project_capabilities(
+    capabilities: &CapabilitySnapshot,
+    folder_plan: Option<&FolderCollectionPlan>,
+) -> CapabilityProjection {
+    let selectable_images = folder_plan
+        .map(|plan| {
+            plan.collection()
+                .entries()
+                .iter()
+                .filter(|entry| capabilities.format(entry.format).can_decode())
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let export_formats = SUPPORTED_IMAGE_FORMATS
+        .into_iter()
+        .filter(|format| capabilities.format(*format).can_encode())
+        .collect::<Vec<_>>();
+
+    let mut enabled_operations = Vec::new();
+    let mut disabled_operations = Vec::new();
+
+    if capabilities.folder_picker().is_available() {
+        enabled_operations.push(DependentOperation::OpenFolder);
+    } else {
+        disabled_operations.push(DisabledOperation {
+            operation: DependentOperation::OpenFolder,
+            unavailable_capabilities: vec![CapabilityName::FolderPicker],
+        });
+    }
+
+    let mut export_requirements = Vec::new();
+    if !capabilities.save_picker().is_available() {
+        export_requirements.push(CapabilityName::SavePicker);
+    }
+    if export_formats.is_empty() {
+        export_requirements.extend(
+            SUPPORTED_IMAGE_FORMATS
+                .into_iter()
+                .map(CapabilityName::FormatEncode),
+        );
+    }
+    if export_requirements.is_empty() {
+        enabled_operations.push(DependentOperation::Export);
+    } else {
+        disabled_operations.push(DisabledOperation {
+            operation: DependentOperation::Export,
+            unavailable_capabilities: export_requirements,
+        });
+    }
+
+    let mut availability_messages = capabilities.diagnostics().to_vec();
+    if let Some(plan) = folder_plan {
+        availability_messages.extend(plan.availability_notices());
+    }
+
+    CapabilityProjection {
+        selectable_images,
+        export_formats,
+        enabled_operations,
+        disabled_operations,
+        availability_messages,
+    }
+}
+
 /// A straight-alpha 16-bit RGBA pixel.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash)]
 pub struct Rgba16 {
@@ -911,6 +1137,393 @@ impl CanonicalImage {
 
     pub const fn orientation(&self) -> NormalizedOrientation {
         self.orientation
+    }
+}
+
+/// Alpha representation supplied by a decoder before canonical normalization.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum DecodedAlphaMode {
+    /// RGB channels already represent unassociated (straight) sRGB samples.
+    #[default]
+    Straight,
+    /// RGB channels are multiplied by alpha and must be unassociated.
+    Premultiplied,
+}
+
+/// EXIF-compatible source orientation supplied by a decoder.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum SourceOrientation {
+    #[default]
+    TopLeft,
+    TopRight,
+    BottomRight,
+    BottomLeft,
+    LeftTop,
+    RightTop,
+    RightBottom,
+    LeftBottom,
+}
+
+impl SourceOrientation {
+    const fn output_dimensions(self, width: u32, height: u32) -> (u32, u32) {
+        match self {
+            Self::TopLeft | Self::TopRight | Self::BottomRight | Self::BottomLeft => {
+                (width, height)
+            }
+            Self::LeftTop | Self::RightTop | Self::RightBottom | Self::LeftBottom => {
+                (height, width)
+            }
+        }
+    }
+
+    const fn destination(self, width: u32, height: u32, x: u32, y: u32) -> (u32, u32) {
+        match self {
+            Self::TopLeft => (x, y),
+            Self::TopRight => (width - 1 - x, y),
+            Self::BottomRight => (width - 1 - x, height - 1 - y),
+            Self::BottomLeft => (x, height - 1 - y),
+            Self::LeftTop => (y, x),
+            Self::RightTop => (height - 1 - y, x),
+            Self::RightBottom => (height - 1 - y, width - 1 - x),
+            Self::LeftBottom => (y, width - 1 - x),
+        }
+    }
+}
+
+/// Owned decoder output before it becomes a canonical image.
+///
+/// Codec adapters must convert source color data to sRGB before creating this
+/// value. The shared core then owns orientation and alpha normalization, so
+/// every later edit sees a top-left, straight-alpha RGBA16 raster.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DecodedImage {
+    width: u32,
+    height: u32,
+    pixels: Vec<Rgba16>,
+    alpha_mode: DecodedAlphaMode,
+    orientation: SourceOrientation,
+}
+
+impl DecodedImage {
+    pub fn new(
+        width: u32,
+        height: u32,
+        pixels: Vec<Rgba16>,
+        alpha_mode: DecodedAlphaMode,
+        orientation: SourceOrientation,
+    ) -> std::result::Result<Self, ImageValidationError> {
+        let expected = CanonicalImage::checked_pixel_count(width, height)?;
+        if pixels.len() != expected {
+            return Err(ImageValidationError::PixelCountMismatch {
+                expected,
+                actual: pixels.len(),
+            });
+        }
+        Ok(Self {
+            width,
+            height,
+            pixels,
+            alpha_mode,
+            orientation,
+        })
+    }
+
+    pub const fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub const fn height(&self) -> u32 {
+        self.height
+    }
+
+    pub fn pixels(&self) -> &[Rgba16] {
+        &self.pixels
+    }
+
+    pub const fn alpha_mode(&self) -> DecodedAlphaMode {
+        self.alpha_mode
+    }
+
+    pub const fn orientation(&self) -> SourceOrientation {
+        self.orientation
+    }
+}
+
+/// Converts decoder output once into the owned, top-left straight-alpha sRGB
+/// representation used by previews and exports.
+pub fn normalize_decoded_image(
+    decoded: DecodedImage,
+) -> std::result::Result<CanonicalImage, ImageValidationError> {
+    let (output_width, output_height) = decoded
+        .orientation
+        .output_dimensions(decoded.width, decoded.height);
+    let output_len = CanonicalImage::checked_pixel_count(output_width, output_height)?;
+    let mut output = vec![Rgba16::default(); output_len];
+
+    for y in 0..decoded.height {
+        for x in 0..decoded.width {
+            let source_index = y as usize * decoded.width as usize + x as usize;
+            let (destination_x, destination_y) =
+                decoded
+                    .orientation
+                    .destination(decoded.width, decoded.height, x, y);
+            let destination_index =
+                destination_y as usize * output_width as usize + destination_x as usize;
+            output[destination_index] =
+                normalize_alpha(decoded.pixels[source_index], decoded.alpha_mode);
+        }
+    }
+
+    CanonicalImage::new(output_width, output_height, output)
+}
+
+fn normalize_alpha(pixel: Rgba16, alpha_mode: DecodedAlphaMode) -> Rgba16 {
+    if alpha_mode == DecodedAlphaMode::Straight {
+        return pixel;
+    }
+    if pixel.alpha == 0 {
+        return Rgba16::new(0, 0, 0, 0);
+    }
+
+    let unassociate = |component: u16| {
+        let numerator = i64::from(component) * i64::from(u16::MAX);
+        let value = (numerator + i64::from(pixel.alpha) / 2) / i64::from(pixel.alpha);
+        value.clamp(0, i64::from(u16::MAX)) as u16
+    };
+    Rgba16::new(
+        unassociate(pixel.red),
+        unassociate(pixel.green),
+        unassociate(pixel.blue),
+        pixel.alpha,
+    )
+}
+
+/// A replay failure caused by malformed historical data rather than mutable UI
+/// state. Valid reducer-produced histories cannot trigger this error.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ImagePipelineError {
+    InvalidCrop(CropValidationError),
+    InvalidImage(ImageValidationError),
+}
+
+impl fmt::Display for ImagePipelineError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidCrop(error) => {
+                write!(formatter, "invalid crop in edit history: {error:?}")
+            }
+            Self::InvalidImage(error) => {
+                write!(formatter, "invalid image during replay: {error:?}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for ImagePipelineError {}
+
+/// Replays the immutable base image, committed history, and uncommitted drafts
+/// at full resolution. Drafts always follow history in brightness-then-contrast
+/// order, regardless of which adjustment currently has focus.
+pub fn render_current_editing_result(
+    source: &CanonicalImage,
+    history: &[EditOperation],
+    draft: &DraftAdjustments,
+) -> std::result::Result<CanonicalImage, ImagePipelineError> {
+    let mut image = source.clone();
+    for operation in history {
+        image = apply_edit_operation(&image, operation)?;
+    }
+    image = apply_adjustment(image, AdjustmentKind::Brightness, draft.brightness())?;
+    apply_adjustment(image, AdjustmentKind::Contrast, draft.contrast())
+}
+
+/// Applies exactly one shared edit operation without mutating its input.
+pub fn apply_edit_operation(
+    image: &CanonicalImage,
+    operation: &EditOperation,
+) -> std::result::Result<CanonicalImage, ImagePipelineError> {
+    match operation {
+        EditOperation::FlipHorizontal => {
+            transform_pixels(image, image.width, image.height, |x, y| {
+                (image.width - 1 - x, y)
+            })
+        }
+        EditOperation::FlipVertical => {
+            transform_pixels(image, image.width, image.height, |x, y| {
+                (x, image.height - 1 - y)
+            })
+        }
+        EditOperation::RotateClockwise90 => {
+            transform_pixels(image, image.height, image.width, |x, y| {
+                (image.height - 1 - y, x)
+            })
+        }
+        EditOperation::RotateCounterclockwise90 => {
+            transform_pixels(image, image.height, image.width, |x, y| {
+                (y, image.width - 1 - x)
+            })
+        }
+        EditOperation::Crop(crop) => {
+            let crop = CropRect::new(
+                image.width,
+                image.height,
+                crop.left,
+                crop.top,
+                crop.right,
+                crop.bottom,
+            )
+            .map_err(ImagePipelineError::InvalidCrop)?;
+            let mut pixels = Vec::with_capacity(crop.width() as usize * crop.height() as usize);
+            for y in crop.top()..crop.bottom() {
+                let offset = y as usize * image.width as usize + crop.left() as usize;
+                let end = offset + crop.width() as usize;
+                pixels.extend_from_slice(&image.pixels[offset..end]);
+            }
+            CanonicalImage::new(crop.width(), crop.height(), pixels)
+                .map_err(ImagePipelineError::InvalidImage)
+        }
+        EditOperation::Brightness(value) => {
+            apply_adjustment(image.clone(), AdjustmentKind::Brightness, *value)
+        }
+        EditOperation::Contrast(value) => {
+            apply_adjustment(image.clone(), AdjustmentKind::Contrast, *value)
+        }
+    }
+}
+
+fn transform_pixels(
+    image: &CanonicalImage,
+    output_width: u32,
+    output_height: u32,
+    destination: impl Fn(u32, u32) -> (u32, u32),
+) -> std::result::Result<CanonicalImage, ImagePipelineError> {
+    let output_len = CanonicalImage::checked_pixel_count(output_width, output_height)
+        .map_err(ImagePipelineError::InvalidImage)?;
+    let mut output = vec![Rgba16::default(); output_len];
+    for y in 0..image.height {
+        for x in 0..image.width {
+            let source_index = y as usize * image.width as usize + x as usize;
+            let (destination_x, destination_y) = destination(x, y);
+            let destination_index =
+                destination_y as usize * output_width as usize + destination_x as usize;
+            output[destination_index] = image.pixels[source_index];
+        }
+    }
+    CanonicalImage::new(output_width, output_height, output)
+        .map_err(ImagePipelineError::InvalidImage)
+}
+
+fn apply_adjustment(
+    mut image: CanonicalImage,
+    kind: AdjustmentKind,
+    value: AdjustmentValue,
+) -> std::result::Result<CanonicalImage, ImagePipelineError> {
+    if value == AdjustmentValue::ZERO {
+        return Ok(image);
+    }
+
+    for pixel in &mut image.pixels {
+        let adjust = |sample: u16| match kind {
+            AdjustmentKind::Brightness => {
+                let delta = round_nearest(i64::from(value.get()) * i64::from(u16::MAX), 100);
+                (i64::from(sample) + delta).clamp(0, i64::from(u16::MAX)) as u16
+            }
+            AdjustmentKind::Contrast => {
+                const MIDPOINT: i64 = 32_768;
+                let scaled = round_nearest(
+                    (i64::from(sample) - MIDPOINT) * (100 + i64::from(value.get())),
+                    100,
+                );
+                (MIDPOINT + scaled).clamp(0, i64::from(u16::MAX)) as u16
+            }
+        };
+        pixel.red = adjust(pixel.red);
+        pixel.green = adjust(pixel.green);
+        pixel.blue = adjust(pixel.blue);
+    }
+    Ok(image)
+}
+
+/// Fixed-point division rounded to nearest, with half values away from zero.
+fn round_nearest(numerator: i64, denominator: i64) -> i64 {
+    debug_assert!(denominator > 0);
+    let magnitude = numerator.unsigned_abs();
+    let rounded = (magnitude + denominator as u64 / 2) / denominator as u64;
+    if numerator.is_negative() {
+        -(rounded as i64)
+    } else {
+        rounded as i64
+    }
+}
+
+/// Revision and draft values identifying one deterministic replay result.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct ReplayCacheKey {
+    image_id: ImageId,
+    revision: Revision,
+    brightness: AdjustmentValue,
+    contrast: AdjustmentValue,
+}
+
+impl ReplayCacheKey {
+    pub fn new(image_id: ImageId, revision: Revision, draft: &DraftAdjustments) -> Self {
+        Self {
+            image_id,
+            revision,
+            brightness: draft.brightness(),
+            contrast: draft.contrast(),
+        }
+    }
+
+    pub fn image_id(&self) -> &ImageId {
+        &self.image_id
+    }
+
+    pub const fn revision(&self) -> Revision {
+        self.revision
+    }
+
+    pub const fn brightness(&self) -> AdjustmentValue {
+        self.brightness
+    }
+
+    pub const fn contrast(&self) -> AdjustmentValue {
+        self.contrast
+    }
+}
+
+/// A revision-keyed cache that uses the same replay function for every miss.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ReplayCache {
+    entries: BTreeMap<ReplayCacheKey, CanonicalImage>,
+}
+
+impl ReplayCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    pub fn evaluate_preview(
+        &mut self,
+        request: &PreviewRequest,
+    ) -> std::result::Result<CanonicalImage, ImagePipelineError> {
+        let key = ReplayCacheKey::new(request.image_id.clone(), request.revision, &request.draft);
+        if let Some(cached) = self.entries.get(&key) {
+            return Ok(cached.clone());
+        }
+
+        let result =
+            render_current_editing_result(&request.source, &request.history, &request.draft)?;
+        self.entries.insert(key, result.clone());
+        Ok(result)
     }
 }
 
@@ -1424,4 +2037,1377 @@ mod tests {
         let notice = VisibleNotice::new(NoticeSeverity::Error, NoticeSubject::FileName(name), safe);
         assert_eq!(notice.severity, NoticeSeverity::Error);
     }
+}
+
+/// A monotonically increasing revision of mutable editor data.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct Revision(u64);
+
+impl Revision {
+    pub const INITIAL: Self = Self(0);
+
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+
+    fn next(self) -> Self {
+        Self(self.0.checked_add(1).expect("editor revision overflow"))
+    }
+}
+
+/// A monotonically increasing identifier for one asynchronous effect request.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct RequestId(u64);
+
+impl RequestId {
+    pub const fn get(self) -> u64 {
+        self.0
+    }
+}
+
+/// The value an effect worker must return with every completion.
+///
+/// `revision` scopes a request to the browsing generation or image-document
+/// revision from which it was created. A completion is accepted only when both
+/// this token and the current pending request still match.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct RequestToken {
+    request_id: RequestId,
+    revision: Revision,
+}
+
+impl RequestToken {
+    pub const fn request_id(self) -> RequestId {
+        self.request_id
+    }
+
+    pub const fn revision(self) -> Revision {
+        self.revision
+    }
+}
+
+/// A mutable crop selection expressed in source-pixel coordinates.
+///
+/// Unlike `CropRect`, this intentionally permits invalid and empty values while
+/// the user is moving crop handles. Confirmation validates it before history is
+/// changed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CropDraft {
+    pub left: u32,
+    pub top: u32,
+    pub right: u32,
+    pub bottom: u32,
+}
+
+impl CropDraft {
+    pub const fn new(left: u32, top: u32, right: u32, bottom: u32) -> Self {
+        Self {
+            left,
+            top,
+            right,
+            bottom,
+        }
+    }
+
+    /// Clamps each source-pixel boundary independently to the current image.
+    ///
+    /// This intentionally preserves an empty or reversed selection while a user
+    /// moves handles; `CropRect::new` validates the selection at confirmation.
+    pub fn clamped(self, width: u32, height: u32) -> Self {
+        Self {
+            left: self.left.min(width),
+            top: self.top.min(height),
+            right: self.right.min(width),
+            bottom: self.bottom.min(height),
+        }
+    }
+}
+
+/// The editor interaction that currently owns keyboard and control input.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InteractionMode {
+    Browse,
+    Crop(CropDraft),
+    Adjust(AdjustmentKind),
+}
+
+impl Default for InteractionMode {
+    fn default() -> Self {
+        Self::Browse
+    }
+}
+
+/// The immutable per-image document retained for the entire open folder session.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ImageDocument {
+    source: CanonicalImage,
+    history: Vec<EditOperation>,
+    redo: Vec<EditOperation>,
+    draft: DraftAdjustments,
+    revision: Revision,
+}
+
+impl ImageDocument {
+    pub fn new(source: CanonicalImage) -> Self {
+        Self {
+            source,
+            history: Vec::new(),
+            redo: Vec::new(),
+            draft: DraftAdjustments::new(),
+            revision: Revision::INITIAL,
+        }
+    }
+
+    pub fn source(&self) -> &CanonicalImage {
+        &self.source
+    }
+
+    pub fn history(&self) -> &[EditOperation] {
+        &self.history
+    }
+
+    pub fn redo(&self) -> &[EditOperation] {
+        &self.redo
+    }
+
+    pub fn draft(&self) -> &DraftAdjustments {
+        &self.draft
+    }
+
+    pub const fn revision(&self) -> Revision {
+        self.revision
+    }
+
+    /// Advances the document revision after a reducer-owned edit transition.
+    ///
+    /// This is public for future reducer extensions, but callers receive an
+    /// owned document only and cannot mutate state held by `EditorState`.
+    pub fn mark_changed(&mut self) {
+        self.revision = self.revision.next();
+    }
+}
+
+/// The content currently shown in the preview region.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PreviewState {
+    EmptyCollection,
+    NoActiveImage,
+    Pending {
+        image_id: ImageId,
+        revision: Revision,
+        token: RequestToken,
+    },
+    Rendered {
+        image_id: ImageId,
+        revision: Revision,
+        image: CanonicalImage,
+    },
+}
+
+impl PreviewState {
+    fn for_collection(collection: &ImageCollection) -> Self {
+        if collection.entries().is_empty() {
+            Self::EmptyCollection
+        } else {
+            Self::NoActiveImage
+        }
+    }
+}
+
+/// The complete browsing data that must remain intact while I/O is pending.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BrowsingState {
+    source_folder: Option<AbsolutePath>,
+    collection: ImageCollection,
+    active: Option<ImageId>,
+    documents: BTreeMap<ImageId, ImageDocument>,
+    preview: PreviewState,
+    revision: Revision,
+}
+
+impl Default for BrowsingState {
+    fn default() -> Self {
+        Self {
+            source_folder: None,
+            collection: ImageCollection::default(),
+            active: None,
+            documents: BTreeMap::new(),
+            preview: PreviewState::EmptyCollection,
+            revision: Revision::INITIAL,
+        }
+    }
+}
+
+impl BrowsingState {
+    pub fn source_folder(&self) -> Option<&AbsolutePath> {
+        self.source_folder.as_ref()
+    }
+
+    pub fn collection(&self) -> &ImageCollection {
+        &self.collection
+    }
+
+    pub fn active(&self) -> Option<&ImageId> {
+        self.active.as_ref()
+    }
+
+    pub fn documents(&self) -> &BTreeMap<ImageId, ImageDocument> {
+        &self.documents
+    }
+
+    pub fn document(&self, image_id: &ImageId) -> Option<&ImageDocument> {
+        self.documents.get(image_id)
+    }
+
+    pub fn preview(&self) -> &PreviewState {
+        &self.preview
+    }
+
+    pub const fn revision(&self) -> Revision {
+        self.revision
+    }
+}
+
+/// Snapshot inputs for a pure, off-thread preview render.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PreviewRequest {
+    pub image_id: ImageId,
+    pub revision: Revision,
+    pub source: CanonicalImage,
+    pub history: Vec<EditOperation>,
+    pub draft: DraftAdjustments,
+}
+
+impl PreviewRequest {
+    fn from_document(image_id: ImageId, document: &ImageDocument) -> Self {
+        Self {
+            image_id,
+            revision: document.revision,
+            source: document.source.clone(),
+            history: document.history.clone(),
+            draft: document.draft.clone(),
+        }
+    }
+}
+
+/// Snapshot inputs for a guarded, off-thread export write.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExportRequest {
+    pub image_id: ImageId,
+    pub revision: Revision,
+    pub source: CanonicalImage,
+    pub history: Vec<EditOperation>,
+    pub draft: DraftAdjustments,
+    pub target: AbsolutePath,
+    pub format: ImageFormat,
+}
+
+impl ExportRequest {
+    fn from_document(
+        image_id: ImageId,
+        document: &ImageDocument,
+        target: AbsolutePath,
+        format: ImageFormat,
+    ) -> Self {
+        Self {
+            image_id,
+            revision: document.revision,
+            source: document.source.clone(),
+            history: document.history.clone(),
+            draft: document.draft.clone(),
+            target,
+            format,
+        }
+    }
+}
+
+/// A declarative, side-effecting operation emitted by the pure reducer.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Effect {
+    EnumerateFolder {
+        token: RequestToken,
+        folder: AbsolutePath,
+    },
+    DecodeImage {
+        token: RequestToken,
+        candidate: CollectionEntry,
+    },
+    RenderPreview {
+        token: RequestToken,
+        request: PreviewRequest,
+    },
+    WriteExport {
+        token: RequestToken,
+        request: ExportRequest,
+    },
+}
+
+impl Effect {
+    pub const fn token(&self) -> RequestToken {
+        match self {
+            Self::EnumerateFolder { token, .. }
+            | Self::DecodeImage { token, .. }
+            | Self::RenderPreview { token, .. }
+            | Self::WriteExport { token, .. } => *token,
+        }
+    }
+}
+
+/// The state recorded for an effect that is in flight.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PendingRequest {
+    FolderEnumeration {
+        token: RequestToken,
+        folder: AbsolutePath,
+    },
+    Decode {
+        token: RequestToken,
+        candidate: CollectionEntry,
+    },
+    Preview {
+        token: RequestToken,
+        image_id: ImageId,
+    },
+    Export {
+        token: RequestToken,
+        image_id: ImageId,
+        target: AbsolutePath,
+    },
+}
+
+impl PendingRequest {
+    pub const fn token(&self) -> RequestToken {
+        match self {
+            Self::FolderEnumeration { token, .. }
+            | Self::Decode { token, .. }
+            | Self::Preview { token, .. }
+            | Self::Export { token, .. } => *token,
+        }
+    }
+}
+
+/// A directional navigation request within the ordered image collection.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NavigationDirection {
+    Left,
+    Right,
+    Home,
+    End,
+}
+
+/// The pure result of resolving a navigation request against browsing state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum NavigationTarget {
+    EmptyCollection,
+    NoActiveImage,
+    NoTarget,
+    Candidate(ImageId),
+}
+
+/// Plans a non-wrapping navigation target without mutating browsing state.
+pub fn plan_navigation(
+    collection: &ImageCollection,
+    active: Option<&ImageId>,
+    direction: NavigationDirection,
+) -> NavigationTarget {
+    let entries = collection.entries();
+    if entries.is_empty() {
+        return NavigationTarget::EmptyCollection;
+    }
+
+    let Some(active) = active else {
+        return NavigationTarget::NoActiveImage;
+    };
+    let Some(index) = entries.iter().position(|entry| &entry.id == active) else {
+        return NavigationTarget::NoActiveImage;
+    };
+
+    let candidate = match direction {
+        NavigationDirection::Left => index.checked_sub(1),
+        NavigationDirection::Right => (index + 1 < entries.len()).then_some(index + 1),
+        NavigationDirection::Home => (index != 0).then_some(0),
+        NavigationDirection::End => (index + 1 != entries.len()).then_some(entries.len() - 1),
+    };
+    candidate
+        .map(|index| NavigationTarget::Candidate(entries[index].id.clone()))
+        .unwrap_or(NavigationTarget::NoTarget)
+}
+
+/// The OS family whose keyboard conventions are active for this session.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimePlatform {
+    MacOs,
+    Linux,
+}
+
+/// A platform-neutral key identity supplied by the desktop event adapter.
+///
+/// The adapter may derive this identity from either the native logical key or
+/// its physical key code. Letter matching is case-insensitive so both paths
+/// resolve to the same keyboard intent.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShortcutKey {
+    Character(char),
+    ArrowUp,
+    ArrowDown,
+    ArrowLeft,
+    ArrowRight,
+    Home,
+    End,
+    Enter,
+}
+
+impl ShortcutKey {
+    fn normalized(self) -> Self {
+        match self {
+            Self::Character(character) => Self::Character(character.to_ascii_lowercase()),
+            key => key,
+        }
+    }
+}
+
+/// Modifier state normalized from a native key event.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct KeyModifiers {
+    pub command: bool,
+    pub control: bool,
+    pub option: bool,
+    pub alt: bool,
+    pub shift: bool,
+}
+
+impl KeyModifiers {
+    pub const fn command() -> Self {
+        Self {
+            command: true,
+            control: false,
+            option: false,
+            alt: false,
+            shift: false,
+        }
+    }
+
+    pub const fn control() -> Self {
+        Self {
+            command: false,
+            control: true,
+            option: false,
+            alt: false,
+            shift: false,
+        }
+    }
+
+    pub const fn option() -> Self {
+        Self {
+            command: false,
+            control: false,
+            option: true,
+            alt: false,
+            shift: false,
+        }
+    }
+
+    pub const fn alt() -> Self {
+        Self {
+            command: false,
+            control: false,
+            option: false,
+            alt: true,
+            shift: false,
+        }
+    }
+
+    pub const fn with_shift(mut self) -> Self {
+        self.shift = true;
+        self
+    }
+
+    fn is_plain(self, shift: bool) -> bool {
+        !self.command && !self.control && !self.option && !self.alt && self.shift == shift
+    }
+
+    fn is_macos_primary(self, shift: bool) -> bool {
+        self.command && !self.control && !self.option && !self.alt && self.shift == shift
+    }
+
+    fn is_linux_primary(self, shift: bool) -> bool {
+        !self.command && self.control && !self.option && !self.alt && self.shift == shift
+    }
+
+    fn is_macos_adjustment(self) -> bool {
+        !self.command && !self.control && self.option && !self.alt && !self.shift
+    }
+
+    fn is_linux_adjustment(self) -> bool {
+        !self.command && !self.control && !self.option && self.alt && !self.shift
+    }
+}
+
+/// A raw key event normalized at the desktop boundary without importing UI APIs.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RawKeyEvent {
+    pub key: ShortcutKey,
+    pub modifiers: KeyModifiers,
+    pub pressed: bool,
+    pub repeat: bool,
+    /// Whether the focused text-capable control has already consumed this event.
+    pub consumed_by_text_control: bool,
+}
+
+impl RawKeyEvent {
+    pub const fn press(key: ShortcutKey, modifiers: KeyModifiers) -> Self {
+        Self {
+            key,
+            modifiers,
+            pressed: true,
+            repeat: false,
+            consumed_by_text_control: false,
+        }
+    }
+}
+
+/// Resolves normalized desktop key events into the shared semantic command set.
+///
+/// A resolver returns at most one command for an event. It only accepts a
+/// non-repeat press that was not consumed by a text-capable control; releases,
+/// repeats, and all other key/modifier combinations are ignored.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ShortcutResolver {
+    platform: RuntimePlatform,
+}
+
+impl ShortcutResolver {
+    pub const fn new(platform: RuntimePlatform) -> Self {
+        Self { platform }
+    }
+
+    pub const fn platform(self) -> RuntimePlatform {
+        self.platform
+    }
+
+    pub fn resolve(self, event: RawKeyEvent) -> Option<EditorCommand> {
+        if !event.pressed || event.repeat || event.consumed_by_text_control {
+            return None;
+        }
+
+        let key = event.key.normalized();
+        let modifiers = event.modifiers;
+        let primary = |shift| match self.platform {
+            RuntimePlatform::MacOs => modifiers.is_macos_primary(shift),
+            RuntimePlatform::Linux => modifiers.is_linux_primary(shift),
+        };
+        let adjustment = match self.platform {
+            RuntimePlatform::MacOs => modifiers.is_macos_adjustment(),
+            RuntimePlatform::Linux => modifiers.is_linux_adjustment(),
+        };
+
+        if key == ShortcutKey::Character('z') {
+            if primary(false) {
+                return Some(EditorCommand::Undo);
+            }
+            if primary(true) {
+                return Some(EditorCommand::Redo);
+            }
+        }
+
+        if adjustment {
+            return match key {
+                ShortcutKey::ArrowUp => Some(EditorCommand::IncreaseAdjustment),
+                ShortcutKey::ArrowDown => Some(EditorCommand::DecreaseAdjustment),
+                _ => None,
+            };
+        }
+
+        match (key, modifiers.is_plain(false), modifiers.is_plain(true)) {
+            (ShortcutKey::ArrowLeft, true, _) => Some(EditorCommand::Navigate {
+                direction: NavigationDirection::Left,
+            }),
+            (ShortcutKey::ArrowRight, true, _) => Some(EditorCommand::Navigate {
+                direction: NavigationDirection::Right,
+            }),
+            (ShortcutKey::Home, true, _) => Some(EditorCommand::Navigate {
+                direction: NavigationDirection::Home,
+            }),
+            (ShortcutKey::End, true, _) => Some(EditorCommand::Navigate {
+                direction: NavigationDirection::End,
+            }),
+            (ShortcutKey::Character('f'), true, false) => Some(EditorCommand::FlipHorizontal),
+            (ShortcutKey::Character('f'), false, true) => Some(EditorCommand::FlipVertical),
+            (ShortcutKey::Character('r'), true, false) => Some(EditorCommand::RotateClockwise90),
+            (ShortcutKey::Character('r'), false, true) => {
+                Some(EditorCommand::RotateCounterclockwise90)
+            }
+            (ShortcutKey::Character('c'), true, false) => Some(EditorCommand::EnterCrop),
+            (ShortcutKey::Character('b'), true, false) => {
+                Some(EditorCommand::FocusAdjustment(AdjustmentKind::Brightness))
+            }
+            (ShortcutKey::Character('d'), true, false) => {
+                Some(EditorCommand::FocusAdjustment(AdjustmentKind::Contrast))
+            }
+            (ShortcutKey::Enter, true, false) => Some(EditorCommand::CommitAdjustment),
+            _ => None,
+        }
+    }
+}
+
+/// Resolves one raw event through the table for the supplied runtime platform.
+pub fn resolve_shortcut(platform: RuntimePlatform, event: RawKeyEvent) -> Option<EditorCommand> {
+    ShortcutResolver::new(platform).resolve(event)
+}
+
+/// Returns the user-visible shortcut label for a semantic editor command.
+///
+/// macOS labels name Command and Option; Linux labels name Control and Alt.
+/// Commands without a defined keyboard input return `None` rather than a
+/// misleading label.
+pub fn shortcut_label(platform: RuntimePlatform, command: &EditorCommand) -> Option<String> {
+    let label = match command {
+        EditorCommand::Undo => match platform {
+            RuntimePlatform::MacOs => "Command+Z",
+            RuntimePlatform::Linux => "Control+Z",
+        },
+        EditorCommand::Redo => match platform {
+            RuntimePlatform::MacOs => "Command+Shift+Z",
+            RuntimePlatform::Linux => "Control+Shift+Z",
+        },
+        EditorCommand::IncreaseAdjustment => match platform {
+            RuntimePlatform::MacOs => "Option+Up",
+            RuntimePlatform::Linux => "Alt+Up",
+        },
+        EditorCommand::DecreaseAdjustment => match platform {
+            RuntimePlatform::MacOs => "Option+Down",
+            RuntimePlatform::Linux => "Alt+Down",
+        },
+        EditorCommand::Navigate {
+            direction: NavigationDirection::Left,
+        } => "Left",
+        EditorCommand::Navigate {
+            direction: NavigationDirection::Right,
+        } => "Right",
+        EditorCommand::Navigate {
+            direction: NavigationDirection::Home,
+        } => "Home",
+        EditorCommand::Navigate {
+            direction: NavigationDirection::End,
+        } => "End",
+        EditorCommand::FlipHorizontal => "F",
+        EditorCommand::FlipVertical => "Shift+F",
+        EditorCommand::RotateClockwise90 => "R",
+        EditorCommand::RotateCounterclockwise90 => "Shift+R",
+        EditorCommand::EnterCrop => "C",
+        EditorCommand::FocusAdjustment(AdjustmentKind::Brightness) => "B",
+        EditorCommand::FocusAdjustment(AdjustmentKind::Contrast) => "D",
+        EditorCommand::CommitAdjustment => "Return",
+        _ => return None,
+    };
+    Some(label.to_owned())
+}
+
+/// A semantic request or typed completion handled by the pure editor reducer.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EditorCommand {
+    BeginFolderEnumeration {
+        folder: AbsolutePath,
+    },
+    FolderEnumerated {
+        token: RequestToken,
+        result: FolderEnumerationPlan,
+    },
+    /// Selects a collection entry; activation waits for decode completion.
+    SelectImage {
+        image_id: ImageId,
+    },
+    /// Resolves a bounded target and requests its decode when one exists.
+    Navigate {
+        direction: NavigationDirection,
+    },
+    /// Low-level decode request retained for adapter compatibility.
+    BeginDecode {
+        candidate: CollectionEntry,
+    },
+    ImageDecoded {
+        token: RequestToken,
+        image: CanonicalImage,
+    },
+    RequestPreview {
+        image_id: ImageId,
+    },
+    PreviewRendered {
+        token: RequestToken,
+        image: CanonicalImage,
+    },
+    BeginExport {
+        target: AbsolutePath,
+        format: ImageFormat,
+    },
+    ExportWritten {
+        token: RequestToken,
+    },
+    OperationFailed {
+        token: RequestToken,
+        error: ApplicationError,
+    },
+    FlipHorizontal,
+    FlipVertical,
+    RotateClockwise90,
+    RotateCounterclockwise90,
+    EnterCrop,
+    /// Replaces the in-progress crop selection after source-coordinate clamping.
+    UpdateCropDraft {
+        draft: CropDraft,
+    },
+    ConfirmCrop,
+    CancelCrop,
+    FocusAdjustment(AdjustmentKind),
+    IncreaseAdjustment,
+    DecreaseAdjustment,
+    CommitAdjustment,
+    Undo,
+    Redo,
+}
+
+/// The complete output of a pure state transition.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Reduction {
+    pub state: EditorState,
+    pub effects: Vec<Effect>,
+}
+
+/// Immutable root state owned by the desktop adapter.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EditorState {
+    capabilities: CapabilitySnapshot,
+    browsing: BrowsingState,
+    mode: InteractionMode,
+    pending: BTreeMap<RequestId, PendingRequest>,
+    notices: Vec<VisibleNotice>,
+    next_request_id: u64,
+    current_enumeration: Option<RequestId>,
+    current_decode: Option<RequestId>,
+    current_preview: Option<RequestId>,
+}
+
+impl EditorState {
+    pub fn new(capabilities: CapabilitySnapshot) -> Self {
+        Self {
+            notices: capabilities.diagnostics().to_vec(),
+            capabilities,
+            browsing: BrowsingState::default(),
+            mode: InteractionMode::Browse,
+            pending: BTreeMap::new(),
+            next_request_id: 0,
+            current_enumeration: None,
+            current_decode: None,
+            current_preview: None,
+        }
+    }
+
+    pub fn capabilities(&self) -> &CapabilitySnapshot {
+        &self.capabilities
+    }
+
+    pub fn browsing(&self) -> &BrowsingState {
+        &self.browsing
+    }
+
+    pub const fn mode(&self) -> InteractionMode {
+        self.mode
+    }
+
+    pub fn pending(&self) -> &BTreeMap<RequestId, PendingRequest> {
+        &self.pending
+    }
+
+    pub fn notices(&self) -> &[VisibleNotice] {
+        &self.notices
+    }
+
+    fn issue_token(&mut self, revision: Revision) -> RequestToken {
+        let request_id = RequestId(self.next_request_id);
+        self.next_request_id = self
+            .next_request_id
+            .checked_add(1)
+            .expect("editor request identifier overflow");
+        RequestToken {
+            request_id,
+            revision,
+        }
+    }
+
+    fn add_error(&mut self, error: ApplicationError) {
+        self.notices.push(error.to_notice());
+    }
+
+    fn start_preview(&mut self, image_id: ImageId) -> Option<Effect> {
+        let document = self.browsing.documents.get(&image_id)?;
+        let request = PreviewRequest::from_document(image_id.clone(), document);
+        let token = self.issue_token(document.revision());
+        self.pending.insert(
+            token.request_id,
+            PendingRequest::Preview {
+                token,
+                image_id: image_id.clone(),
+            },
+        );
+        self.current_preview = Some(token.request_id);
+        self.browsing.preview = PreviewState::Pending {
+            image_id,
+            revision: token.revision,
+            token,
+        };
+        Some(Effect::RenderPreview { token, request })
+    }
+
+    fn takes_matching_pending(&mut self, token: RequestToken) -> Option<PendingRequest> {
+        let pending = self.pending.get(&token.request_id)?;
+        if pending.token() != token {
+            return None;
+        }
+        self.pending.remove(&token.request_id)
+    }
+
+    fn start_decode(&mut self, candidate: CollectionEntry) -> Effect {
+        let token = self.issue_token(self.browsing.revision);
+        self.pending.insert(
+            token.request_id,
+            PendingRequest::Decode {
+                token,
+                candidate: candidate.clone(),
+            },
+        );
+        self.current_decode = Some(token.request_id);
+        Effect::DecodeImage { token, candidate }
+    }
+}
+
+/// Reduces one semantic command without performing I/O or mutating the input.
+pub fn reduce(state: &EditorState, command: EditorCommand) -> Reduction {
+    let mut state = state.clone();
+    let mut effects = Vec::new();
+
+    match command {
+        EditorCommand::BeginFolderEnumeration { folder } => {
+            state.browsing.revision = state.browsing.revision.next();
+            let token = state.issue_token(state.browsing.revision);
+            state.pending.insert(
+                token.request_id,
+                PendingRequest::FolderEnumeration {
+                    token,
+                    folder: folder.clone(),
+                },
+            );
+            state.current_enumeration = Some(token.request_id);
+            effects.push(Effect::EnumerateFolder { token, folder });
+        }
+        EditorCommand::FolderEnumerated { token, result } => {
+            let Some(PendingRequest::FolderEnumeration { folder, .. }) =
+                state.takes_matching_pending(token)
+            else {
+                return Reduction { state, effects };
+            };
+            let is_current = state.current_enumeration == Some(token.request_id)
+                && state.browsing.revision == token.revision;
+            if !is_current {
+                return Reduction { state, effects };
+            }
+            state.current_enumeration = None;
+            match result {
+                FolderEnumerationPlan::Ready(plan) if plan.source_folder() == &folder => {
+                    state.browsing.source_folder = Some(plan.source_folder().clone());
+                    state.browsing.collection = plan.collection().clone();
+                    state.browsing.active = None;
+                    state.browsing.documents.clear();
+                    state.browsing.preview =
+                        PreviewState::for_collection(&state.browsing.collection);
+                    state.mode = InteractionMode::Browse;
+                    state.notices = state.capabilities.diagnostics().to_vec();
+                    state.notices.extend(plan.availability_notices());
+                }
+                FolderEnumerationPlan::Ready(_) => state.add_error(ApplicationError::boundary(
+                    "folder enumeration",
+                    SafeError::new(
+                        ErrorCategory::Invariant,
+                        "completed folder does not match request",
+                    ),
+                )),
+                FolderEnumerationPlan::Failed(error) => state.add_error(error),
+            }
+        }
+        EditorCommand::SelectImage { image_id } => {
+            let candidate = state
+                .browsing
+                .collection
+                .entries()
+                .iter()
+                .find(|entry| entry.id == image_id)
+                .cloned();
+            match candidate {
+                Some(candidate) => effects.push(state.start_decode(candidate)),
+                None => state.add_error(ApplicationError::boundary(
+                    "image selection",
+                    SafeError::new(
+                        ErrorCategory::Invariant,
+                        "selected image is not in the current collection",
+                    ),
+                )),
+            }
+        }
+        EditorCommand::Navigate { direction } => {
+            match plan_navigation(
+                state.browsing.collection(),
+                state.browsing.active(),
+                direction,
+            ) {
+                NavigationTarget::Candidate(image_id) => {
+                    let candidate = state
+                        .browsing
+                        .collection
+                        .entries()
+                        .iter()
+                        .find(|entry| entry.id == image_id)
+                        .expect("navigation planner returned a collection image")
+                        .clone();
+                    effects.push(state.start_decode(candidate));
+                }
+                NavigationTarget::EmptyCollection => {
+                    state.browsing.preview = PreviewState::EmptyCollection;
+                }
+                NavigationTarget::NoActiveImage | NavigationTarget::NoTarget => {}
+            }
+        }
+        EditorCommand::BeginDecode { candidate } => {
+            let is_current_entry = state
+                .browsing
+                .collection
+                .entries()
+                .iter()
+                .any(|entry| entry == &candidate);
+            if !is_current_entry {
+                state.add_error(ApplicationError::boundary(
+                    "image decode",
+                    SafeError::new(
+                        ErrorCategory::Invariant,
+                        "candidate is not in the current collection",
+                    ),
+                ));
+            } else {
+                effects.push(state.start_decode(candidate));
+            }
+        }
+        EditorCommand::ImageDecoded { token, image } => {
+            let Some(PendingRequest::Decode { candidate, .. }) =
+                state.takes_matching_pending(token)
+            else {
+                return Reduction { state, effects };
+            };
+            let is_current = state.current_decode == Some(token.request_id)
+                && state.browsing.revision == token.revision
+                && state
+                    .browsing
+                    .collection
+                    .entries()
+                    .iter()
+                    .any(|entry| entry == &candidate);
+            if !is_current {
+                return Reduction { state, effects };
+            }
+            state.current_decode = None;
+            let image_id = candidate.id.clone();
+            state
+                .browsing
+                .documents
+                .entry(image_id.clone())
+                .or_insert_with(|| ImageDocument::new(image));
+            state.browsing.active = Some(image_id.clone());
+            state.mode = InteractionMode::Browse;
+            if let Some(effect) = state.start_preview(image_id) {
+                effects.push(effect);
+            }
+        }
+        EditorCommand::RequestPreview { image_id } => {
+            if let Some(effect) = state.start_preview(image_id) {
+                effects.push(effect);
+            }
+        }
+        EditorCommand::PreviewRendered { token, image } => {
+            let Some(PendingRequest::Preview { image_id, .. }) =
+                state.takes_matching_pending(token)
+            else {
+                return Reduction { state, effects };
+            };
+            let is_current = state.current_preview == Some(token.request_id)
+                && state
+                    .browsing
+                    .document(&image_id)
+                    .is_some_and(|document| document.revision() == token.revision)
+                && matches!(
+                    &state.browsing.preview,
+                    PreviewState::Pending { token: pending, .. } if *pending == token
+                );
+            if !is_current {
+                return Reduction { state, effects };
+            }
+            state.current_preview = None;
+            state.browsing.preview = PreviewState::Rendered {
+                image_id,
+                revision: token.revision,
+                image,
+            };
+        }
+        EditorCommand::BeginExport { target, format } => {
+            let Some(image_id) = state.browsing.active.clone() else {
+                state.add_error(ApplicationError::MissingActiveImage {
+                    command: CommandName::Export,
+                });
+                return Reduction { state, effects };
+            };
+            let document = state
+                .browsing
+                .document(&image_id)
+                .expect("active image must have a document");
+            let request =
+                ExportRequest::from_document(image_id.clone(), document, target.clone(), format);
+            let token = state.issue_token(document.revision());
+            state.pending.insert(
+                token.request_id,
+                PendingRequest::Export {
+                    token,
+                    image_id,
+                    target,
+                },
+            );
+            effects.push(Effect::WriteExport { token, request });
+        }
+        EditorCommand::ExportWritten { token } => {
+            let Some(PendingRequest::Export {
+                image_id, target, ..
+            }) = state.takes_matching_pending(token)
+            else {
+                return Reduction { state, effects };
+            };
+            if state
+                .browsing
+                .document(&image_id)
+                .is_some_and(|document| document.revision() == token.revision)
+            {
+                state.notices.push(VisibleNotice::new(
+                    NoticeSeverity::Info,
+                    NoticeSubject::Path(target),
+                    SafeError::new(ErrorCategory::FileSystem, "export completed"),
+                ));
+            }
+        }
+        EditorCommand::OperationFailed { token, error } => {
+            let Some(pending) = state.takes_matching_pending(token) else {
+                return Reduction { state, effects };
+            };
+            let is_current = match &pending {
+                PendingRequest::FolderEnumeration { .. } => {
+                    state.current_enumeration == Some(token.request_id)
+                        && state.browsing.revision == token.revision
+                }
+                PendingRequest::Decode { .. } => {
+                    state.current_decode == Some(token.request_id)
+                        && state.browsing.revision == token.revision
+                }
+                PendingRequest::Preview { image_id, .. } => {
+                    state.current_preview == Some(token.request_id)
+                        && state
+                            .browsing
+                            .document(image_id)
+                            .is_some_and(|document| document.revision() == token.revision)
+                }
+                PendingRequest::Export { image_id, .. } => state
+                    .browsing
+                    .document(image_id)
+                    .is_some_and(|document| document.revision() == token.revision),
+            };
+            if is_current {
+                match pending {
+                    PendingRequest::FolderEnumeration { .. } => {
+                        state.current_enumeration = None;
+                        state.add_error(error);
+                    }
+                    PendingRequest::Decode { candidate, .. } => {
+                        state.current_decode = None;
+                        let decode_error = match error {
+                            ApplicationError::Decode { cause, .. } => ApplicationError::Decode {
+                                file_name: candidate.file_name,
+                                cause,
+                            },
+                            ApplicationError::ResourceLimit { .. } => ApplicationError::Decode {
+                                file_name: candidate.file_name,
+                                cause: SafeError::new(
+                                    ErrorCategory::PortableCodec,
+                                    "image decode exceeded a resource limit",
+                                ),
+                            },
+                            _ => ApplicationError::Decode {
+                                file_name: candidate.file_name,
+                                cause: SafeError::new(
+                                    ErrorCategory::PortableCodec,
+                                    "could not decode image",
+                                ),
+                            },
+                        };
+                        state.add_error(decode_error);
+                    }
+                    PendingRequest::Preview { .. } => {
+                        state.current_preview = None;
+                        state.add_error(error);
+                    }
+                    PendingRequest::Export { .. } => state.add_error(error),
+                }
+            }
+        }
+        EditorCommand::EnterCrop
+        | EditorCommand::UpdateCropDraft { .. }
+        | EditorCommand::ConfirmCrop
+        | EditorCommand::CancelCrop => {
+            let command_name = match command {
+                EditorCommand::EnterCrop | EditorCommand::UpdateCropDraft { .. } => {
+                    CommandName::EnterCrop
+                }
+                EditorCommand::ConfirmCrop => CommandName::ConfirmCrop,
+                EditorCommand::CancelCrop => CommandName::EnterCrop,
+                _ => unreachable!("only crop commands reach this reducer branch"),
+            };
+            let Some(image_id) = state.browsing.active.clone() else {
+                state.add_error(ApplicationError::MissingActiveImage {
+                    command: command_name,
+                });
+                return Reduction { state, effects };
+            };
+
+            let crop_dimensions = |state: &EditorState| {
+                let document = state
+                    .browsing
+                    .documents
+                    .get(&image_id)
+                    .expect("active image must have a document");
+                let mut image = document.source.clone();
+                for operation in &document.history {
+                    image = apply_edit_operation(&image, operation)
+                        .expect("reducer-produced edit history must be replayable");
+                }
+                (image.width, image.height)
+            };
+
+            match command {
+                EditorCommand::EnterCrop => {
+                    let (width, height) = crop_dimensions(&state);
+                    state.mode = InteractionMode::Crop(CropDraft::new(0, 0, width, height));
+                }
+                EditorCommand::UpdateCropDraft { draft } => {
+                    if matches!(state.mode, InteractionMode::Crop(_)) {
+                        let (width, height) = crop_dimensions(&state);
+                        state.mode = InteractionMode::Crop(draft.clamped(width, height));
+                    } else {
+                        state.add_error(ApplicationError::boundary(
+                            "crop selection",
+                            SafeError::new(
+                                ErrorCategory::Invariant,
+                                "crop selection is not active",
+                            ),
+                        ));
+                    }
+                }
+                EditorCommand::ConfirmCrop => {
+                    let InteractionMode::Crop(draft) = state.mode else {
+                        state.add_error(ApplicationError::boundary(
+                            "crop confirmation",
+                            SafeError::new(
+                                ErrorCategory::Invariant,
+                                "crop selection is not active",
+                            ),
+                        ));
+                        return Reduction { state, effects };
+                    };
+                    let (width, height) = crop_dimensions(&state);
+                    match CropRect::new(
+                        width,
+                        height,
+                        draft.left,
+                        draft.top,
+                        draft.right,
+                        draft.bottom,
+                    ) {
+                        Ok(crop) => {
+                            let document = state
+                                .browsing
+                                .documents
+                                .get_mut(&image_id)
+                                .expect("active image must have a document");
+                            document.history.push(EditOperation::Crop(crop));
+                            document.redo.clear();
+                            document.mark_changed();
+                            state.mode = InteractionMode::Browse;
+                            if let Some(effect) = state.start_preview(image_id) {
+                                effects.push(effect);
+                            }
+                        }
+                        Err(reason) => state.add_error(ApplicationError::InvalidCrop { reason }),
+                    }
+                }
+                EditorCommand::CancelCrop => {
+                    if matches!(state.mode, InteractionMode::Crop(_)) {
+                        state.mode = InteractionMode::Browse;
+                    }
+                }
+                _ => unreachable!("only crop commands reach this reducer branch"),
+            }
+        }
+        command => {
+            let geometric_operation = match command {
+                EditorCommand::FlipHorizontal => Some(EditOperation::FlipHorizontal),
+                EditorCommand::FlipVertical => Some(EditOperation::FlipVertical),
+                EditorCommand::RotateClockwise90 => Some(EditOperation::RotateClockwise90),
+                EditorCommand::RotateCounterclockwise90 => {
+                    Some(EditOperation::RotateCounterclockwise90)
+                }
+                _ => None,
+            };
+            let command_name = match command {
+                EditorCommand::FlipHorizontal => CommandName::FlipHorizontal,
+                EditorCommand::FlipVertical => CommandName::FlipVertical,
+                EditorCommand::RotateClockwise90 => CommandName::RotateClockwise90,
+                EditorCommand::RotateCounterclockwise90 => CommandName::RotateCounterclockwise90,
+                EditorCommand::EnterCrop => CommandName::EnterCrop,
+                EditorCommand::FocusAdjustment(AdjustmentKind::Brightness) => {
+                    CommandName::FocusBrightness
+                }
+                EditorCommand::FocusAdjustment(AdjustmentKind::Contrast) => {
+                    CommandName::FocusContrast
+                }
+                EditorCommand::IncreaseAdjustment => CommandName::IncreaseAdjustment,
+                EditorCommand::DecreaseAdjustment => CommandName::DecreaseAdjustment,
+                EditorCommand::CommitAdjustment => CommandName::CommitAdjustment,
+                EditorCommand::Undo => CommandName::Undo,
+                EditorCommand::Redo => CommandName::Redo,
+                _ => unreachable!("all non-edit commands were handled above"),
+            };
+            let Some(image_id) = state.browsing.active.clone() else {
+                state.add_error(ApplicationError::MissingActiveImage {
+                    command: command_name,
+                });
+                return Reduction { state, effects };
+            };
+
+            if let Some(operation) = geometric_operation {
+                let document = state
+                    .browsing
+                    .documents
+                    .get_mut(&image_id)
+                    .expect("active image must have a document");
+                document.history.push(operation);
+                document.redo.clear();
+                document.mark_changed();
+                if let Some(effect) = state.start_preview(image_id) {
+                    effects.push(effect);
+                }
+            } else {
+                match command {
+                    EditorCommand::FocusAdjustment(kind) => {
+                        let document = state
+                            .browsing
+                            .documents
+                            .get_mut(&image_id)
+                            .expect("active image must have a document");
+                        document.draft.focus(kind);
+                        state.mode = InteractionMode::Adjust(kind);
+                        if let Some(effect) = state.start_preview(image_id) {
+                            effects.push(effect);
+                        }
+                    }
+                    EditorCommand::IncreaseAdjustment | EditorCommand::DecreaseAdjustment => {
+                        let changed = {
+                            let document = state
+                                .browsing
+                                .documents
+                                .get_mut(&image_id)
+                                .expect("active image must have a document");
+                            let draft_before = document.draft.clone();
+                            match command {
+                                EditorCommand::IncreaseAdjustment => {
+                                    document.draft.increase_focused();
+                                }
+                                EditorCommand::DecreaseAdjustment => {
+                                    document.draft.decrease_focused();
+                                }
+                                _ => {
+                                    unreachable!("only adjustment step commands reach this branch")
+                                }
+                            }
+                            document.draft != draft_before
+                        };
+                        // A clamped endpoint is deliberately a no-op: keep the
+                        // already-rendered preview visible rather than issuing
+                        // a redundant pending preview request.
+                        if changed {
+                            if let Some(effect) = state.start_preview(image_id) {
+                                effects.push(effect);
+                            }
+                        }
+                    }
+                    EditorCommand::CommitAdjustment => {
+                        let operation = {
+                            let document = state
+                                .browsing
+                                .documents
+                                .get_mut(&image_id)
+                                .expect("active image must have a document");
+                            let operation = document.draft.commit_focused();
+                            if let Some(operation) = &operation {
+                                document.history.push(operation.clone());
+                                document.redo.clear();
+                                document.mark_changed();
+                            }
+                            operation
+                        };
+                        if operation.is_some() {
+                            state.mode = InteractionMode::Browse;
+                            if let Some(effect) = state.start_preview(image_id) {
+                                effects.push(effect);
+                            }
+                        }
+                    }
+                    EditorCommand::Undo | EditorCommand::Redo => {
+                        let changed = {
+                            let document = state
+                                .browsing
+                                .documents
+                                .get_mut(&image_id)
+                                .expect("active image must have a document");
+                            let operation = match command {
+                                EditorCommand::Undo => document.history.pop(),
+                                EditorCommand::Redo => document.redo.pop(),
+                                _ => unreachable!("only history commands reach this branch"),
+                            };
+
+                            if let Some(operation) = operation {
+                                match command {
+                                    EditorCommand::Undo => document.redo.push(operation),
+                                    EditorCommand::Redo => document.history.push(operation),
+                                    _ => unreachable!("only history commands reach this branch"),
+                                }
+                                document.mark_changed();
+                                true
+                            } else {
+                                false
+                            }
+                        };
+
+                        if changed {
+                            if let Some(effect) = state.start_preview(image_id) {
+                                effects.push(effect);
+                            }
+                        }
+                    }
+                    _ => unreachable!("only edit commands reach this reducer branch"),
+                }
+            }
+        }
+    }
+
+    Reduction { state, effects }
 }

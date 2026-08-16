@@ -24,82 +24,82 @@ Implement the application as a Rust workspace with a platform-independent `image
     - Add portable JPEG/PNG/TIFF registration and decode/encode self-check interfaces; model optional HEIC decode/encode availability independently with human-readable diagnostics.
     - Return a complete immutable `CapabilitySnapshot` before open-folder or export commands can be accepted.
     - _Requirements: 9.1, 9.2, 9.5-9.8, 11.2, 11.3_
-  - [-] 2.2 Implement pure direct-folder collection planning
+  - [x] 2.2 Implement pure direct-folder collection planning
     - Filter only direct regular `.jpg`, `.jpeg`, `.png`, `.tif`, `.tiff`, and `.heic` candidates; retain undecodable candidates as availability notices and order supported entries by UTF-8 filename then full path bytes.
     - Expose folder-enumeration success/failure inputs without mutating prior browsing state.
     - _Requirements: 1.2, 1.3, 1.4, 9.3, 9.4_
-  - [~] 2.3 Write property test for capability-filtered collection planning
+  - [x] 2.3 Write property test for capability-filtered collection planning
     - **Property 1: Capability-filtered collection is complete and ordered.**
     - Generate direct/descendant/directory entries, valid UTF-8 paths, supported extensions, and capability combinations; compare against a reference ordering oracle.
     - **Validates: Requirements 1.2, 1.4, 9.3, 9.4.**
-  - [~] 2.4 Implement pure capability-to-view/export projection
+  - [x] 2.4 Implement pure capability-to-view/export projection
     - Derive selectable image entries, export format choices, disabled dependent operations, and non-blocking availability messages from independent format and dialog capabilities.
     - Ensure JPEG/PNG/TIFF operations remain usable when HEIC capability is unavailable.
     - _Requirements: 7.1, 8.1, 9.2-9.8, 11.2, 11.3_
-  - [~] 2.5 Write property test for conservative capability projection
+  - [-] 2.5 Write property test for conservative capability projection
     - **Property 9: Capability projection is conservative and format-specific.**
     - Generate decode/encode/folder-picker/save-picker truth tables and verify enabled controls, notices, and format choices against the requirement matrix.
     - **Validates: Requirements 7.1, 8.1, 9.1-9.8, 11.2, 11.3.**
 
-- [ ] 3. Add the reducer, asynchronous-effect protocol, and image navigation
-  - [~] 3.1 Implement immutable editor state, reducer, and revision-token effects
+- [x] 3. Add the reducer, asynchronous-effect protocol, and image navigation
+  - [x] 3.1 Implement immutable editor state, reducer, and revision-token effects
     - Add browsing state, per-image documents, interaction mode, pending effects, and typed completion commands.
     - Make every effect completion conditional on its request/revision token so stale enumeration, decode, preview, and export work cannot overwrite newer state.
     - _Requirements: 1.3, 1.7, 3.6, 4.2, 5.12, 6.6_
-  - [~] 3.2 Implement selection and navigation planning with atomic decode completion
+  - [x] 3.2 Implement selection and navigation planning with atomic decode completion
     - Add selection plus Left, Right, Home, and End commands with no wrapping; require a successful decode completion before replacing the active image and preview.
     - Preserve prior browsing state and emit filename-specific errors for decode failures; expose the required empty/no-active navigation states.
     - _Requirements: 1.5-1.7, 2.1-2.13_
-  - [~] 3.3 Write property test for atomic candidate activation
+  - [x] 3.3 Write property test for atomic candidate activation
     - **Property 2: Candidate activation is atomic.**
     - Generate prior browsing states and successful/failed selection or navigation completions; assert complete state retention on error and exact activation on success.
     - **Validates: Requirements 1.5-1.7, 2.1-2.9.**
-  - [~] 3.4 Write property test for navigation ordering and boundaries
+  - [x] 3.4 Write property test for navigation ordering and boundaries
     - **Property 3: Navigation targets obey collection order and boundaries.**
     - Generate ordered, empty, and no-active collections to check targets, boundary no-ops, and retained state.
     - **Validates: Requirements 2.10-2.13.**
 
-- [ ] 4. Implement deterministic canonical image editing and crop interaction
-  - [~] 4.1 Implement canonical decode normalization and history replay pipeline
+- [x] 4. Implement deterministic canonical image editing and crop interaction
+  - [x] 4.1 Implement canonical decode normalization and history replay pipeline
     - Convert decoded images once to explicit straight-alpha sRGB RGBA16 after source-orientation normalization; render full-resolution results from immutable base pixels, ordered history, and drafts.
     - Keep cache keys revision-based while routing cached and uncached evaluation through the same core operations.
     - _Requirements: 7.7, 10.1, 10.2_
-  - [~] 4.2 Implement fixed-integer flip and rotation operations
+  - [x] 4.2 Implement fixed-integer flip and rotation operations
     - Implement horizontal/vertical flip and clockwise/counterclockwise 90-degree mappings with required dimensions, append semantics, redo clearing, preview revision effects, and no-active errors.
     - _Requirements: 3.1-3.6, 6.3_
-  - [~] 4.3 Write property test for geometric mappings
+  - [x] 4.3 Write property test for geometric mappings
     - **Property 4: Geometric operations preserve their specified pixel mapping.**
     - Generate asymmetric nonempty RGBA16 images with distinguishable pixels; verify every mapping, output dimensions, and four-clockwise-rotation identity.
     - **Validates: Requirements 3.1-3.5.**
-  - [~] 4.4 Implement source-coordinate crop draft, validation, confirmation, and cancellation
+  - [x] 4.4 Implement source-coordinate crop draft, validation, confirmation, and cancellation
     - Add crop entry, source-pixel draft clamping, nonempty in-bounds confirmation that appends exactly one crop, invalid-confirmation state retention, cancellation, and no-active errors.
     - _Requirements: 4.1-4.7, 6.3_
-  - [~] 4.5 Write property test for crop transaction behavior
+  - [x] 4.5 Write property test for crop transaction behavior
     - **Property 5: Crop is bounded, exact, and transactional.**
     - Generate valid and invalid untrusted bounds to verify exact half-open copied pixels, retained crop state on failure, and cancellation behavior.
     - **Validates: Requirements 4.3-4.7.**
 
 - [ ] 5. Implement adjustment, history, and cross-platform shortcut behavior
-  - [~] 5.1 Implement brightness and contrast draft interaction and deterministic arithmetic
+  - [x] 5.1 Implement brightness and contrast draft interaction and deterministic arithmetic
     - Add focus, one-step clamped increase/decrease, preview application order, and `Return` commit behavior including zero-value operations and focused-draft reset.
     - Use specified fixed-point rounding/clamping while leaving alpha unchanged and preserving preview/state for no-active commands.
     - _Requirements: 5.1-5.12, 6.3_
-  - [~] 5.2 Write property test for adjustment clamping and commits
+  - [-] 5.2 Write property test for adjustment clamping and commits
     - **Property 6: Adjustment commands are clamped and commit exactly their draft.**
     - Generate focused adjustment command sequences and values to verify bounds, identity at zero, exact single commit, reset, and matching pixels.
     - **Validates: Requirements 5.1-5.11.**
-  - [~] 5.3 Implement per-image undo and redo reducer transitions
+  - [x] 5.3 Implement per-image undo and redo reducer transitions
     - Move operations LIFO between each active document's history and redo stacks; preserve empty-stack/no-active state and clear only the edited document's redo stack after a new operation.
     - _Requirements: 6.1-6.6_
-  - [~] 5.4 Write property test for reversible, branch-safe per-image history
+  - [x] 5.4 Write property test for reversible, branch-safe per-image history
     - **Property 7: Per-image history is reversible and branch-safe.**
     - Generate multi-document edit histories and compare undo/redo behavior to a reference stack model.
     - **Validates: Requirements 6.1-6.6.**
-  - [~] 5.5 Implement pure macOS/Linux shortcut resolution
+  - [x] 5.5 Implement pure macOS/Linux shortcut resolution
     - Normalize raw pressed/released/repeated key events and map Command/Control, Option/Alt, navigation, edit, and adjustment inputs to one semantic command per accepted non-repeat press.
     - Supply runtime-correct shortcut labels and ignore events consumed by text-capable controls.
     - _Requirements: 8.3, 8.5, 8.6, 10.3, 10.4_
-  - [~] 5.6 Write property test for platform-invariant shortcut semantics
+  - [x] 5.6 Write property test for platform-invariant shortcut semantics
     - **Property 8: Shortcut resolution has platform-invariant semantics.**
     - Generate defined shortcut intents and raw event variants; compare macOS/Linux semantic commands and reject releases/repeats.
     - **Validates: Requirements 8.3, 8.5, 8.6, 10.3, 10.4.**
@@ -108,21 +108,21 @@ Implement the application as a Rust workspace with a platform-independent `image
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 7. Add guarded codecs, filesystem operations, and non-destructive export
-  - [~] 7.1 Implement bounded codec decode/encode adapters
+  - [-] 7.1 Implement bounded codec decode/encode adapters
     - Implement `ImageCodec` dispatch, resource limits, malformed-file failures, portable lossless PNG/TIFF conversion, JPEG encoding, and runtime-probed optional HEIC registration.
     - Keep unavailable codec capability distinct from a content decode failure.
     - _Requirements: 1.5-1.7, 7.7, 9.1, 9.5-9.8_
-  - [~] 7.2 Write codec integration tests with real fixtures
+  - [-] 7.2 Write codec integration tests with real fixtures
     - Test JPEG/PNG/TIFF decode/encode, malformed supported content, resource-limit failures, PNG/TIFF sample equivalence, JPEG tolerance, and HEIC cases only when the detected adapter is available.
     - _Requirements: 1.5-1.7, 7.7, 9.5, 9.6_
-  - [~] 7.3 Implement file identity checks and export planning
+  - [x] 7.3 Implement file identity checks and export planning
     - Add source/target identity resolution and `ExportPlan` validation that rejects source targets and pre-existing regular targets before opening a writer, retaining immutable source identity and document revision.
     - _Requirements: 7.2-7.6_
-  - [~] 7.4 Write property test for non-replacement export planning
+  - [-] 7.4 Write property test for non-replacement export planning
     - **Property 11: Export planning never permits replacement.**
     - Generate source and destination identity/existence combinations to verify all conflicts are rejected and valid plans retain source identity and revision.
     - **Validates: Requirements 7.2-7.6.**
-  - [~] 7.5 Implement create-new export execution and typed completion handling
+  - [-] 7.5 Implement create-new export execution and typed completion handling
     - Render the planned full-resolution result, encode through a sibling temporary/new destination, flush, publish only without replacement, clean up only attempt-created failures, and report path-specific errors without state mutation.
     - _Requirements: 7.2-7.7_
   - [~] 7.6 Write filesystem/export integration tests
