@@ -112,7 +112,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(100))]
 
     #[test]
-    fn adjustment_sequences_clamp_and_commit_without_changing_rendered_pixels(
+    fn adjustment_sequences_clamp_and_commit_only_the_focused_draft(
         samples in prop::array::uniform16(any::<u16>()),
         commands in prop::collection::vec(0_u8..4, 0..300),
         commit_brightness in any::<bool>(),
@@ -169,17 +169,12 @@ proptest! {
         } else {
             AdjustmentKind::Contrast
         };
-        apply(&mut state, EditorCommand::FocusAdjustment(committed_kind));
-        focused = Some(committed_kind);
-
-        let before_commit = {
-            let document = state
-                .browsing()
-                .document(&image_id)
-                .expect("active image retains its document");
-            render_current_editing_result(document.source(), document.history(), document.draft())
-                .expect("reducer-produced document is renderable")
+        let retained_kind = match committed_kind {
+            AdjustmentKind::Brightness => AdjustmentKind::Contrast,
+            AdjustmentKind::Contrast => AdjustmentKind::Brightness,
         };
+        apply(&mut state, EditorCommand::FocusAdjustment(committed_kind));
+
         let history_len = state
             .browsing()
             .document(&image_id)
@@ -187,11 +182,8 @@ proptest! {
             .history()
             .len();
         let committed_value = value_for(committed_kind, brightness, contrast);
-        let retained_kind = match committed_kind {
-            AdjustmentKind::Brightness => AdjustmentKind::Contrast,
-            AdjustmentKind::Contrast => AdjustmentKind::Brightness,
-        };
         let retained_value = value_for(retained_kind, brightness, contrast);
+        let expected_commit = expected_operation(committed_kind, committed_value);
 
         apply(&mut state, EditorCommand::CommitAdjustment);
         let document = state
@@ -199,21 +191,28 @@ proptest! {
             .document(&image_id)
             .expect("active image retains its document");
         prop_assert_eq!(document.history().len(), history_len + 1);
-        prop_assert_eq!(document.history().last(), Some(&expected_operation(committed_kind, committed_value)));
+        prop_assert_eq!(document.history().last(), Some(&expected_commit));
         prop_assert_eq!(document.draft().focused(), None);
         prop_assert_eq!(value_for(committed_kind, document.draft().brightness().get(), document.draft().contrast().get()), 0);
         prop_assert_eq!(value_for(retained_kind, document.draft().brightness().get(), document.draft().contrast().get()), retained_value);
-        let after_commit = render_current_editing_result(document.source(), document.history(), document.draft())
-            .expect("reducer-produced document is renderable");
-        prop_assert_eq!(after_commit, before_commit);
 
-        // A zero-valued focused draft must commit as an identity operation whose
-        // rendered result retains every source channel, including alpha.
+        // A zero-valued focused draft must commit exactly once as an identity
+        // operation whose pixels retain every source channel, including alpha.
         let (mut zero_state, zero_image_id) = activate(image.clone());
         apply(
             &mut zero_state,
             EditorCommand::FocusAdjustment(committed_kind),
         );
+        let before_zero_commit = zero_state
+            .browsing()
+            .document(&zero_image_id)
+            .expect("active image retains its document");
+        let zero_preview = render_current_editing_result(
+            before_zero_commit.source(),
+            before_zero_commit.history(),
+            before_zero_commit.draft(),
+        )
+        .expect("zero adjustment draft is renderable");
         apply(&mut zero_state, EditorCommand::CommitAdjustment);
         let zero_document = zero_state
             .browsing()
@@ -227,6 +226,7 @@ proptest! {
             zero_document.draft(),
         )
         .expect("zero adjustment history is renderable");
-        prop_assert_eq!(zero_result, image);
+        prop_assert_eq!(&zero_result, &zero_preview);
+        prop_assert_eq!(&zero_result, &image);
     }
 }

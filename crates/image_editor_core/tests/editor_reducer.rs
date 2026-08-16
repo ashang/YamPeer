@@ -769,10 +769,16 @@ fn adjustment_commands_focus_step_clamp_and_commit_only_the_focused_draft() {
 
     let committed = reduce(&decremented.state, EditorCommand::CommitAdjustment);
     let document = committed.state.browsing().document(&image_id).unwrap();
-    assert_eq!(document.history(), &[EditOperation::contrast(-1).unwrap()]);
+    assert_eq!(
+        document.history(),
+        &[
+            EditOperation::brightness(100).unwrap(),
+            EditOperation::contrast(-1).unwrap(),
+        ]
+    );
     assert!(document.redo().is_empty());
     assert_eq!(document.revision().get(), 1);
-    assert_eq!(document.draft().brightness().get(), 100);
+    assert_eq!(document.draft().brightness().get(), 0);
     assert_eq!(document.draft().contrast().get(), 0);
     assert_eq!(document.draft().focused(), None);
     assert_eq!(committed.state.mode(), InteractionMode::Browse);

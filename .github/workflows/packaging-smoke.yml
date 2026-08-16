@@ -1,0 +1,75 @@
+name: Packaging smoke
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  smoke:
+    name: ${{ matrix.id }} package smoke
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: macos
+            runner: macos-latest
+            profile: macos-aarch64
+            dialog_feature: macos-dialogs
+          - id: linux
+            runner: ubuntu-latest
+            profile: linux-x86_64-portal
+            dialog_feature: xdg-portal
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - name: Test package startup with optional dependencies available
+        run: >-
+          cargo test --locked --package image_editor_desktop
+          --features ${{ matrix.dialog_feature }}
+          package_startup_smoke_uses_one_workspace_with_optional_dependencies_present_or_missing
+      - name: Test package startup without optional dialog or HEIC dependencies
+        run: >-
+          cargo test --locked --package image_editor_desktop --no-default-features
+          --features native-window,portable-codecs
+          package_startup_smoke_uses_one_workspace_with_optional_dependencies_present_or_missing
+      - name: Test capability projection for present and missing HEIC runtimes
+        run: cargo test --locked --package image_editor_codecs --test packaging_smoke
+      - name: Generate target capability manifest
+        run: >-
+          cargo run --locked --package image_editor_desktop
+          --features ${{ matrix.dialog_feature }} --bin generate-capabilities --
+          --profile ${{ matrix.profile }} --output artifacts/${{ matrix.id }}/capabilities.json
+      - name: Produce conformance and lossless export artifact
+        env:
+          IMAGE_EDITOR_CONFORMANCE_ARTIFACT: artifacts/${{ matrix.id }}/conformance.txt
+        run: >-
+          cargo test --locked --package image_editor_codecs
+          --test cross_platform_conformance
+          runtime_command_tables_produce_identical_deterministic_pipeline_artifacts -- --exact
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packaging-smoke-${{ matrix.id }}
+          path: artifacts/${{ matrix.id }}
+          if-no-files-found: error
+
+  compare-conformance:
+    name: Compare macOS and Linux artifacts
+    needs: smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: packaging-smoke-macos
+          path: artifacts/macos
+      - uses: actions/download-artifact@v4
+        with:
+          name: packaging-smoke-linux
+          path: artifacts/linux
+      - name: Compare conformance and PNG/TIFF export-reopen samples
+        run: cmp artifacts/macos/conformance.txt artifacts/linux/conformance.txt
+      - name: Verify generated package manifests identify their target
+        run: >-
+          grep -F '"platform": "macos"' artifacts/macos/capabilities.json &&
+          grep -F '"platform": "linux"' artifacts/linux/capabilities.json

@@ -5,13 +5,29 @@
 //! runtime probe reports a decoder and/or encoder, so linking never implies
 //! runtime availability.
 
-use std::{collections::BTreeMap, io::Write, path::Path, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    fs::{self, File, OpenOptions},
+    io::Write,
+    path::{Path, PathBuf},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+};
 
 #[cfg(feature = "portable-codecs")]
 use image::ImageDecoder;
+#[cfg(any(feature = "portable-codecs", feature = "heic"))]
+use image_editor_core::Rgba16;
 use image_editor_core::{
     AbsolutePath, Availability, AvailabilityReason, CanonicalImage, CapabilitySnapshot,
-    CodecProvider, FormatCapability, ImageFormat, PlatformCapability, ResourceLimitKind, Rgba16,
+    CodecProvider, FormatCapability, ImageFormat, PlatformCapability, ResourceLimitKind,
+};
+#[cfg(feature = "heic")]
+use libheif_rs::{
+    Channel, ColorSpace, CompressionFormat, EncoderQuality, HeifContext, Image as HeifImage,
+    LibHeif, RgbChroma,
 };
 
 pub use image_editor_core::{ApplicationError, ErrorCategory, Result, SafeError};
@@ -90,6 +106,7 @@ impl DecodeLimits {
         max_intermediate_bytes: 512 * 1024 * 1024,
     };
 
+    #[cfg(any(feature = "portable-codecs", feature = "heic"))]
     fn check_dimensions(self, width: u32, height: u32) -> std::result::Result<(), CodecError> {
         if width > self.max_width || height > self.max_height {
             return Err(CodecError::ResourceLimit(ResourceLimitKind::Dimensions));
@@ -259,6 +276,8 @@ impl CodecRegistry {
         let mut registry = Self::detect_with(platform, portable, &UnconfiguredHeicProbe);
         #[cfg(feature = "portable-codecs")]
         registry.register(Arc::new(PortableImageCodec));
+        #[cfg(feature = "heic")]
+        registry.register_optional_heic(&LibHeifRuntimeProbe, Arc::new(HeicImageCodec));
         registry
     }
 
@@ -375,6 +394,168 @@ impl CodecRegistry {
         })?;
         codec.encode(image, format, destination)
     }
+}
+
+/// Executes one reducer-authorized export request without mutating editor state.
+///
+/// The request is already an immutable snapshot of the selected document. This
+/// worker replays that snapshot at full resolution, encodes to an exclusively
+/// created sibling temporary file, flushes it, then creates the target through
+/// a no-replacement hard link. The temporary link is removed only after the
+/// target exists. Every failure removes only the temporary file and (if that
+/// final cleanup itself fails) the target created by this attempt.
+pub fn execute_export_request(
+    registry: &CodecRegistry,
+    request: &image_editor_core::ExportRequest,
+) -> image_editor_core::Result<()> {
+    let rendered = image_editor_core::render_current_editing_result(
+        &request.source,
+        &request.history,
+        &request.draft,
+    )
+    .map_err(|_| export_error(request, ErrorCategory::Invariant, "could not render export"))?;
+
+    let (temporary_path, mut file) = create_sibling_temporary_file(request)?;
+    if let Err(error) = registry.encode(&rendered, request.format, &mut file) {
+        discard_attempt_file(&temporary_path);
+        return Err(export_codec_error(request, error));
+    }
+    if let Err(error) = file.flush() {
+        discard_attempt_file(&temporary_path);
+        return Err(export_io_error(request, "could not flush export", error));
+    }
+    if let Err(error) = file.sync_all() {
+        discard_attempt_file(&temporary_path);
+        return Err(export_io_error(request, "could not sync export", error));
+    }
+    drop(file);
+
+    if let Err(error) =
+        publish_without_replacement(&temporary_path, Path::new(request.target.as_str()))
+    {
+        discard_attempt_file(&temporary_path);
+        return Err(export_io_error(request, "could not publish export", error));
+    }
+
+    Ok(())
+}
+
+/// Converts export worker output into the typed completion consumed by the
+/// reducer. The reducer checks the original request token and revision before
+/// showing either completion, so stale worker results cannot alter new state.
+pub fn complete_export_request(
+    registry: &CodecRegistry,
+    token: image_editor_core::RequestToken,
+    request: image_editor_core::ExportRequest,
+) -> image_editor_core::EditorCommand {
+    match execute_export_request(registry, &request) {
+        Ok(()) => image_editor_core::EditorCommand::ExportWritten { token },
+        Err(error) => image_editor_core::EditorCommand::OperationFailed { token, error },
+    }
+}
+
+static NEXT_TEMPORARY_EXPORT_ID: AtomicU64 = AtomicU64::new(0);
+
+fn create_sibling_temporary_file(
+    request: &image_editor_core::ExportRequest,
+) -> image_editor_core::Result<(PathBuf, File)> {
+    let target = Path::new(request.target.as_str());
+    let parent = target.parent().ok_or_else(|| {
+        export_error(
+            request,
+            ErrorCategory::FileSystem,
+            "export target has no parent directory",
+        )
+    })?;
+    let name = target
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| {
+            export_error(
+                request,
+                ErrorCategory::FileSystem,
+                "export target has no UTF-8 filename",
+            )
+        })?;
+
+    for _ in 0..128 {
+        let sequence = NEXT_TEMPORARY_EXPORT_ID.fetch_add(1, Ordering::Relaxed);
+        let path = parent.join(format!(
+            ".{name}.image-editor-{}-{sequence}.tmp",
+            std::process::id()
+        ));
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(file) => return Ok((path, file)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(export_io_error(request, "could not create export", error)),
+        }
+    }
+
+    Err(export_error(
+        request,
+        ErrorCategory::FileSystem,
+        "could not allocate a unique temporary export file",
+    ))
+}
+
+/// Publishes by linking the attempt-created sibling file to a new target.
+/// `hard_link` fails if the target appeared after planning, unlike rename which
+/// can replace it. macOS and Linux both support this for same-directory files.
+fn publish_without_replacement(temporary_path: &Path, target: &Path) -> std::io::Result<()> {
+    fs::hard_link(temporary_path, target)?;
+    if let Err(error) = fs::remove_file(temporary_path) {
+        // Both files are known to have been created by this attempt. Remove
+        // them best-effort so a failed publication leaves no export behind.
+        let _ = fs::remove_file(target);
+        let _ = fs::remove_file(temporary_path);
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn discard_attempt_file(path: &Path) {
+    let _ = fs::remove_file(path);
+}
+
+fn export_error(
+    request: &image_editor_core::ExportRequest,
+    category: ErrorCategory,
+    summary: impl Into<String>,
+) -> image_editor_core::ApplicationError {
+    image_editor_core::ApplicationError::ExportWrite {
+        path: request.target.clone(),
+        cause: SafeError::new(category, summary),
+    }
+}
+
+fn export_io_error(
+    request: &image_editor_core::ExportRequest,
+    operation: &str,
+    error: std::io::Error,
+) -> image_editor_core::ApplicationError {
+    export_error(
+        request,
+        ErrorCategory::FileSystem,
+        format!("{operation}: {}", error.kind()),
+    )
+}
+
+fn export_codec_error(
+    request: &image_editor_core::ExportRequest,
+    error: CodecError,
+) -> image_editor_core::ApplicationError {
+    let category = match error {
+        CodecError::Unavailable { .. } => ErrorCategory::OptionalDependency,
+        CodecError::ResourceLimit(_) => ErrorCategory::ResourceLimit,
+        CodecError::Content { .. } | CodecError::Input { .. } | CodecError::Output { .. } => {
+            ErrorCategory::PortableCodec
+        }
+    };
+    export_error(
+        request,
+        category,
+        format!("could not encode {} export", request.format.display_name()),
+    )
 }
 
 fn combine_availability(runtime: &Availability, adapter: &Availability) -> Availability {
@@ -595,22 +776,7 @@ impl ImageCodec for PortableImageCodec {
     }
 }
 
-#[cfg(feature = "portable-codecs")]
-fn image_format_from_path(
-    path: &AbsolutePath,
-) -> std::result::Result<image::ImageFormat, CodecError> {
-    let extension = Path::new(path.as_str())
-        .extension()
-        .and_then(|value| value.to_str())
-        .and_then(ImageFormat::from_extension);
-    extension
-        .map(image_format)
-        .ok_or_else(|| CodecError::Input {
-            message: "source path has no supported image extension".to_owned(),
-        })
-}
-
-#[cfg(feature = "portable-codecs")]
+#[cfg(any(feature = "portable-codecs", feature = "heic"))]
 fn read_bounded(path: &Path, max_input_bytes: u64) -> std::result::Result<Vec<u8>, CodecError> {
     let file = std::fs::File::open(path).map_err(|error| CodecError::Input {
         message: error.to_string(),
@@ -696,12 +862,10 @@ fn dynamic_rgba16(image: &CanonicalImage) -> std::result::Result<image::DynamicI
         image.height(),
         samples,
     )
-    .ok_or_else(|| {
-            CodecError::Output {
-                format: ImageFormat::Png,
-                message: "canonical image pixel count is invalid".to_owned(),
-            }
-        })?;
+    .ok_or_else(|| CodecError::Output {
+        format: ImageFormat::Png,
+        message: "canonical image pixel count is invalid".to_owned(),
+    })?;
     Ok(image::DynamicImage::ImageRgba16(buffer))
 }
 
@@ -726,6 +890,285 @@ fn dynamic_rgb8(image: &CanonicalImage) -> std::result::Result<image::DynamicIma
             }
         })?;
     Ok(image::DynamicImage::ImageRgb8(buffer))
+}
+
+/// Feature-gated runtime probe for libheif plugins. A linked library is not
+/// enough: the required HEVC decoder or encoder plugin must be discoverable.
+#[cfg(feature = "heic")]
+pub struct LibHeifRuntimeProbe;
+
+#[cfg(feature = "heic")]
+impl HeicRuntimeProbe for LibHeifRuntimeProbe {
+    fn check_decode(&self) -> ProbeResult<()> {
+        let libheif = LibHeif::new_checked().map_err(heic_probe_error)?;
+        if libheif
+            .decoder_descriptors(1, Some(CompressionFormat::Hevc))
+            .is_empty()
+        {
+            return Err(CodecProbeError::new(
+                "libheif has no runtime HEVC decoder plugin",
+            ));
+        }
+        Ok(())
+    }
+
+    fn check_encode(&self) -> ProbeResult<()> {
+        let libheif = LibHeif::new_checked().map_err(heic_probe_error)?;
+        if libheif
+            .encoder_descriptors(1, Some(CompressionFormat::Hevc), None)
+            .is_empty()
+        {
+            return Err(CodecProbeError::new(
+                "libheif has no runtime HEVC encoder plugin",
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(feature = "heic")]
+fn heic_probe_error(error: libheif_rs::HeifError) -> CodecProbeError {
+    CodecProbeError::new(format!("libheif runtime initialization failed: {error}"))
+}
+
+/// Optional HEIC implementation. It is registered only after
+/// `LibHeifRuntimeProbe` confirms the corresponding plugin direction. The
+/// adapter constructs a fresh libheif guard for each operation, avoiding a
+/// process-wide dependency when the `heic` feature is disabled.
+#[cfg(feature = "heic")]
+#[derive(Debug, Default)]
+pub struct HeicImageCodec;
+
+#[cfg(feature = "heic")]
+impl ImageCodec for HeicImageCodec {
+    fn capability(&self, format: ImageFormat) -> FormatCapability {
+        if format == ImageFormat::Heic {
+            FormatCapability::new(
+                Availability::Available,
+                Availability::Available,
+                Some(CodecProvider::Libheif),
+            )
+        } else {
+            let reason = AvailabilityReason::new("this adapter only provides HEIC");
+            FormatCapability::new(
+                Availability::Unavailable {
+                    reason: reason.clone(),
+                },
+                Availability::Unavailable { reason },
+                None,
+            )
+        }
+    }
+
+    fn decode(
+        &self,
+        path: &AbsolutePath,
+        limits: DecodeLimits,
+    ) -> std::result::Result<DecodedSource, CodecError> {
+        let bytes = read_bounded(Path::new(path.as_str()), limits.max_input_bytes)?;
+        let libheif = LibHeif::new_checked().map_err(|error| CodecError::Content {
+            format: ImageFormat::Heic,
+            message: format!("libheif initialization failed: {error}"),
+        })?;
+        let context =
+            HeifContext::read_from_bytes(&bytes).map_err(|error| CodecError::Content {
+                format: ImageFormat::Heic,
+                message: error.to_string(),
+            })?;
+        let handle = context
+            .primary_image_handle()
+            .map_err(|error| CodecError::Content {
+                format: ImageFormat::Heic,
+                message: error.to_string(),
+            })?;
+        limits.check_dimensions(handle.width(), handle.height())?;
+        let decoded = libheif
+            .decode(&handle, ColorSpace::Rgb(RgbChroma::Rgba), None)
+            .map_err(|error| CodecError::Content {
+                format: ImageFormat::Heic,
+                message: error.to_string(),
+            })?;
+        canonical_from_heif(decoded, limits)
+    }
+
+    fn encode(
+        &self,
+        image: &CanonicalImage,
+        format: ImageFormat,
+        destination: &mut dyn Write,
+    ) -> std::result::Result<(), CodecError> {
+        if format != ImageFormat::Heic {
+            return Err(CodecError::Unavailable {
+                format,
+                operation: CodecOperation::Encode,
+                reason: "the libheif adapter only encodes HEIC".to_owned(),
+            });
+        }
+        let libheif = LibHeif::new_checked().map_err(|error| CodecError::Output {
+            format,
+            message: format!("libheif initialization failed: {error}"),
+        })?;
+        let mut encoded = HeifImage::new(
+            image.width(),
+            image.height(),
+            ColorSpace::Rgb(RgbChroma::C444),
+        )
+        .map_err(|error| CodecError::Output {
+            format,
+            message: error.to_string(),
+        })?;
+        for channel in [Channel::R, Channel::G, Channel::B] {
+            encoded
+                .create_plane(channel, image.width(), image.height(), 8)
+                .map_err(|error| CodecError::Output {
+                    format,
+                    message: error.to_string(),
+                })?;
+        }
+        let mut planes = encoded.planes_mut();
+        copy_heif_channel(
+            planes.r.as_mut().ok_or_else(|| CodecError::Output {
+                format,
+                message: "libheif did not create a red plane".to_owned(),
+            })?,
+            image,
+            |pixel| pixel.red,
+            format,
+        )?;
+        copy_heif_channel(
+            planes.g.as_mut().ok_or_else(|| CodecError::Output {
+                format,
+                message: "libheif did not create a green plane".to_owned(),
+            })?,
+            image,
+            |pixel| pixel.green,
+            format,
+        )?;
+        copy_heif_channel(
+            planes.b.as_mut().ok_or_else(|| CodecError::Output {
+                format,
+                message: "libheif did not create a blue plane".to_owned(),
+            })?,
+            image,
+            |pixel| pixel.blue,
+            format,
+        )?;
+        drop(planes);
+
+        let mut context = HeifContext::new().map_err(|error| CodecError::Output {
+            format,
+            message: error.to_string(),
+        })?;
+        let mut encoder = libheif
+            .encoder_for_format(CompressionFormat::Hevc)
+            .map_err(|error| CodecError::Output {
+                format,
+                message: error.to_string(),
+            })?;
+        encoder
+            .set_quality(EncoderQuality::Lossy(90))
+            .map_err(|error| CodecError::Output {
+                format,
+                message: error.to_string(),
+            })?;
+        context
+            .encode_image(&encoded, &mut encoder, None)
+            .map_err(|error| CodecError::Output {
+                format,
+                message: error.to_string(),
+            })?;
+        let bytes = context
+            .write_to_bytes()
+            .map_err(|error| CodecError::Output {
+                format,
+                message: error.to_string(),
+            })?;
+        destination
+            .write_all(&bytes)
+            .map_err(|error| CodecError::Output {
+                format,
+                message: error.to_string(),
+            })
+    }
+}
+
+#[cfg(feature = "heic")]
+fn canonical_from_heif(
+    image: HeifImage,
+    limits: DecodeLimits,
+) -> std::result::Result<CanonicalImage, CodecError> {
+    let width = image.width();
+    let height = image.height();
+    limits.check_dimensions(width, height)?;
+    let plane = image
+        .planes()
+        .interleaved
+        .ok_or_else(|| CodecError::Content {
+            format: ImageFormat::Heic,
+            message: "libheif did not produce an RGBA interleaved plane".to_owned(),
+        })?;
+    let row_bytes = usize::try_from(width)
+        .ok()
+        .and_then(|width| width.checked_mul(4))
+        .ok_or(CodecError::ResourceLimit(
+            ResourceLimitKind::IntermediateAllocation,
+        ))?;
+    let pixel_count = usize::try_from(u64::from(width) * u64::from(height))
+        .map_err(|_| CodecError::ResourceLimit(ResourceLimitKind::IntermediateAllocation))?;
+    let mut pixels = Vec::with_capacity(pixel_count);
+    for row in 0..usize::try_from(height).expect("u32 fits in usize on supported targets") {
+        let start = row
+            .checked_mul(plane.stride)
+            .ok_or(CodecError::ResourceLimit(
+                ResourceLimitKind::IntermediateAllocation,
+            ))?;
+        let samples = plane
+            .data
+            .get(start..start.saturating_add(row_bytes))
+            .ok_or_else(|| CodecError::Content {
+                format: ImageFormat::Heic,
+                message: "libheif returned a truncated RGBA plane".to_owned(),
+            })?;
+        for pixel in samples.chunks_exact(4) {
+            pixels.push(Rgba16::new(
+                u16::from(pixel[0]) * 257,
+                u16::from(pixel[1]) * 257,
+                u16::from(pixel[2]) * 257,
+                u16::from(pixel[3]) * 257,
+            ));
+        }
+    }
+    CanonicalImage::new(width, height, pixels).map_err(|error| CodecError::Content {
+        format: ImageFormat::Heic,
+        message: format!("decoded HEIC violates canonical invariants: {error:?}"),
+    })
+}
+
+#[cfg(feature = "heic")]
+fn copy_heif_channel(
+    plane: &mut libheif_rs::Plane<&mut [u8]>,
+    image: &CanonicalImage,
+    component: impl Fn(&Rgba16) -> u16,
+    format: ImageFormat,
+) -> std::result::Result<(), CodecError> {
+    let width = usize::try_from(image.width()).expect("u32 fits in usize on supported targets");
+    for (row, pixels) in image.pixels().chunks_exact(width).enumerate() {
+        let start = row.checked_mul(plane.stride).ok_or(CodecError::Output {
+            format,
+            message: "libheif plane stride overflowed".to_owned(),
+        })?;
+        let destination = plane
+            .data
+            .get_mut(start..start.saturating_add(width))
+            .ok_or_else(|| CodecError::Output {
+                format,
+                message: "libheif returned a truncated output plane".to_owned(),
+            })?;
+        for (output, pixel) in destination.iter_mut().zip(pixels) {
+            *output = (component(pixel) >> 8) as u8;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -827,6 +1270,33 @@ mod tests {
         }
     }
 
+    #[cfg(all(feature = "heic", feature = "portable-codecs"))]
+    #[test]
+    fn runtime_registered_heic_adapter_round_trips_when_both_plugins_are_available() {
+        let registry = CodecRegistry::detect(available_platform());
+        let capability = registry.snapshot().format(ImageFormat::Heic);
+        if !(capability.can_decode() && capability.can_encode()) {
+            return;
+        }
+
+        let source = sample_image();
+        let path = temp_path("heic");
+        let mut bytes = Vec::new();
+        registry
+            .encode(&source, ImageFormat::Heic, &mut bytes)
+            .expect("runtime-advertised HEIC encoder must accept canonical images");
+        assert!(!bytes.is_empty());
+        std::fs::write(path.as_str(), bytes).unwrap();
+        let decoded = registry
+            .decode(ImageFormat::Heic, &path, DecodeLimits::DEFAULT)
+            .expect("runtime-advertised HEIC decoder must reopen its encoded output");
+        assert_eq!(
+            (decoded.width(), decoded.height()),
+            (source.width(), source.height())
+        );
+        std::fs::remove_file(path.as_str()).unwrap();
+    }
+
     #[cfg(feature = "portable-codecs")]
     #[test]
     fn malformed_content_and_resource_limits_do_not_become_unavailable_capabilities() {
@@ -864,20 +1334,29 @@ mod tests {
 
     #[cfg(feature = "portable-codecs")]
     #[test]
-    fn jpeg_encoding_and_unavailable_heic_dispatch_are_distinct() {
+    fn jpeg_encoding_and_heic_dispatch_follow_detected_capability() {
         let registry = CodecRegistry::detect(available_platform());
         let mut jpeg = Vec::new();
         registry
             .encode(&sample_image(), ImageFormat::Jpeg, &mut jpeg)
             .unwrap();
         assert!(jpeg.starts_with(&[0xff, 0xd8]));
-        assert!(matches!(
-            registry.decode(ImageFormat::Heic, &temp_path("heic"), DecodeLimits::DEFAULT),
-            Err(CodecError::Unavailable {
-                format: ImageFormat::Heic,
-                operation: CodecOperation::Decode,
-                ..
-            })
-        ));
+
+        let result = registry.decode(ImageFormat::Heic, &temp_path("heic"), DecodeLimits::DEFAULT);
+        if registry.snapshot().format(ImageFormat::Heic).can_decode() {
+            assert!(
+                !matches!(result, Err(CodecError::Unavailable { .. })),
+                "a runtime-registered HEIC decoder must attempt to decode content"
+            );
+        } else {
+            assert!(matches!(
+                result,
+                Err(CodecError::Unavailable {
+                    format: ImageFormat::Heic,
+                    operation: CodecOperation::Decode,
+                    ..
+                })
+            ));
+        }
     }
 }

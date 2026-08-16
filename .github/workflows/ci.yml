@@ -1,0 +1,52 @@
+name: Quality gates
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  PROPTEST_CASES: "100"
+
+jobs:
+  quality:
+    name: ${{ matrix.os }} quality gates
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, ubuntu-24.04]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install locked Rust toolchain
+        run: rustup toolchain install 1.85.0 --profile minimal --component clippy rustfmt
+      - name: Install Linux optional-codec and GTK build dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes libgtk-3-dev libheif-dev pkg-config
+      - name: Install macOS optional-codec and GTK build dependencies
+        if: runner.os == 'macOS'
+        run: brew install gtk+3 libheif pkg-config
+      - name: Run formatting, lint, core, property, feature and hosted integration gates
+        run: make quality-gates
+      - name: Build and generate the native macOS package manifest
+        if: runner.os == 'macOS'
+        run: make package-macos
+      - name: Build and generate the native Linux package manifest
+        if: runner.os == 'Linux'
+        run: make package-linux
+      - name: Generate deterministic conformance artifact
+        run: >-
+          IMAGE_EDITOR_CONFORMANCE_ARTIFACT=artifacts/conformance-${{ runner.os }}.txt
+          cargo test --locked --package image_editor_codecs --test cross_platform_conformance
+          runtime_command_tables_produce_identical_deterministic_pipeline_artifacts
+      - name: Upload conformance artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance-${{ runner.os }}
+          path: artifacts/conformance-${{ runner.os }}.txt
+          if-no-files-found: error

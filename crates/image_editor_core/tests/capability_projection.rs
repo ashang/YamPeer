@@ -291,11 +291,12 @@ proptest! {
         // A plan produced before a capability downgrade must be re-filtered by
         // the current snapshot, so no unavailable decoder leaves an image selectable.
         let stale_projection = project_capabilities(&capabilities, Some(&stale_folder_plan));
-        let expected_decodable_formats = FORMATS
+        let mut expected_decodable_formats = FORMATS
             .into_iter()
             .enumerate()
             .filter_map(|(index, format)| truth_table[index].then_some(format))
             .collect::<Vec<_>>();
+        expected_decodable_formats.sort_by_key(|format| format_file_name(*format));
         let stale_selectable_formats = stale_projection
             .selectable_images()
             .iter()

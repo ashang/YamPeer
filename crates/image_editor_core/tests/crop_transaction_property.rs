@@ -113,8 +113,10 @@ fn crop_case() -> impl Strategy<Value = CropCase> {
         let invalid = prop_oneof![
             (0_u32..=width, 0_u32..=height)
                 .prop_map(|(left, top)| CropDraft::new(left, top, left, top)),
-            (1_u32..=width, 0_u32..width, 0_u32..=height, 0_u32..=height)
-                .prop_map(|(left, right, top, bottom)| CropDraft::new(left, top, right, bottom)),
+            (1_u32..=width, 0_u32..height).prop_flat_map(move |(left, top)| {
+                ((top + 1)..=height)
+                    .prop_map(move |bottom| CropDraft::new(left, top, left - 1, bottom))
+            }),
             (0_u32..=width, 0_u32..=height, 0_u32..=width, 0_u32..=height).prop_map(
                 |(right, top, _left, bottom)| CropDraft::new(u32::MAX, top, right, bottom)
             ),

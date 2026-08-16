@@ -1337,6 +1337,110 @@ pub fn render_current_editing_result(
     apply_adjustment(image, AdjustmentKind::Contrast, draft.contrast())
 }
 
+/// A platform-neutral, byte-for-byte comparable rendering artifact.
+///
+/// This deliberately records the rendered image rather than an encoded file,
+/// so codec metadata and container-level differences cannot hide a pipeline
+/// difference. Crop operations remain in the artifact because their original
+/// source-coordinate bounds are part of the cross-platform editing result.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConformanceResult {
+    width: u32,
+    height: u32,
+    orientation: NormalizedOrientation,
+    crop_history: Vec<CropRect>,
+    pixels: Vec<Rgba16>,
+}
+
+impl ConformanceResult {
+    /// Captures a rendered canonical result and the crop operations that
+    /// produced it, preserving their application order.
+    pub fn from_rendered(image: &CanonicalImage, history: &[EditOperation]) -> Self {
+        Self {
+            width: image.width(),
+            height: image.height(),
+            orientation: image.orientation(),
+            crop_history: history
+                .iter()
+                .filter_map(|operation| match operation {
+                    EditOperation::Crop(crop) => Some(*crop),
+                    _ => None,
+                })
+                .collect(),
+            pixels: image.pixels().to_vec(),
+        }
+    }
+
+    pub const fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub const fn height(&self) -> u32 {
+        self.height
+    }
+
+    pub const fn orientation(&self) -> NormalizedOrientation {
+        self.orientation
+    }
+
+    pub fn crop_history(&self) -> &[CropRect] {
+        &self.crop_history
+    }
+
+    pub fn pixels(&self) -> &[Rgba16] {
+        &self.pixels
+    }
+
+    /// Serializes every equivalence-relevant value in a stable text format.
+    ///
+    /// The format has a fixed field order, decimal integer representation, and
+    /// row-major RGBA16 samples. It is suitable for CI artifacts produced on
+    /// separate macOS and Linux runners.
+    pub fn serialize(&self) -> String {
+        let orientation = match self.orientation {
+            NormalizedOrientation::TopLeft => "top-left",
+        };
+        let mut output = String::from("image-editor-conformance-v1\n");
+        output.push_str("dimensions=");
+        output.push_str(&self.width.to_string());
+        output.push('x');
+        output.push_str(&self.height.to_string());
+        output.push('\n');
+        output.push_str("orientation=");
+        output.push_str(orientation);
+        output.push('\n');
+        output.push_str("crop-history=");
+        for (index, crop) in self.crop_history.iter().enumerate() {
+            if index != 0 {
+                output.push(';');
+            }
+            output.push_str(&crop.left().to_string());
+            output.push(',');
+            output.push_str(&crop.top().to_string());
+            output.push(',');
+            output.push_str(&crop.right().to_string());
+            output.push(',');
+            output.push_str(&crop.bottom().to_string());
+        }
+        output.push('\n');
+        output.push_str("rgba16=");
+        for (index, pixel) in self.pixels.iter().enumerate() {
+            if index != 0 {
+                output.push(';');
+            }
+            output.push_str(&pixel.red.to_string());
+            output.push(',');
+            output.push_str(&pixel.green.to_string());
+            output.push(',');
+            output.push_str(&pixel.blue.to_string());
+            output.push(',');
+            output.push_str(&pixel.alpha.to_string());
+        }
+        output.push('\n');
+        output
+    }
+}
+
 /// Applies exactly one shared edit operation without mutating its input.
 pub fn apply_edit_operation(
     image: &CanonicalImage,
@@ -1762,6 +1866,25 @@ impl DraftAdjustments {
             None => None,
         }
     }
+
+    /// Commits pending drafts in render order so committing one adjustment does
+    /// not change the currently visible result when the other draft is nonzero.
+    pub fn commit_for_stable_preview(&mut self) -> Vec<EditOperation> {
+        let Some(focused) = self.focused.take() else {
+            return Vec::new();
+        };
+
+        let brightness = std::mem::take(&mut self.brightness);
+        let contrast = std::mem::take(&mut self.contrast);
+        let mut operations = Vec::with_capacity(2);
+        if focused == AdjustmentKind::Brightness || brightness != AdjustmentValue::ZERO {
+            operations.push(EditOperation::Brightness(brightness));
+        }
+        if focused == AdjustmentKind::Contrast || contrast != AdjustmentValue::ZERO {
+            operations.push(EditOperation::Contrast(contrast));
+        }
+        operations
+    }
 }
 
 /// A user-visible message severity.
@@ -2124,17 +2247,12 @@ impl CropDraft {
 }
 
 /// The editor interaction that currently owns keyboard and control input.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum InteractionMode {
+    #[default]
     Browse,
     Crop(CropDraft),
     Adjust(AdjustmentKind),
-}
-
-impl Default for InteractionMode {
-    fn default() -> Self {
-        Self::Browse
-    }
 }
 
 /// The immutable per-image document retained for the entire open folder session.
@@ -3350,21 +3468,21 @@ pub fn reduce(state: &EditorState, command: EditorCommand) -> Reduction {
                         }
                     }
                     EditorCommand::CommitAdjustment => {
-                        let operation = {
+                        let operations = {
                             let document = state
                                 .browsing
                                 .documents
                                 .get_mut(&image_id)
                                 .expect("active image must have a document");
-                            let operation = document.draft.commit_focused();
-                            if let Some(operation) = &operation {
-                                document.history.push(operation.clone());
+                            let operations = document.draft.commit_for_stable_preview();
+                            if !operations.is_empty() {
+                                document.history.extend(operations.iter().cloned());
                                 document.redo.clear();
                                 document.mark_changed();
                             }
-                            operation
+                            operations
                         };
-                        if operation.is_some() {
+                        if !operations.is_empty() {
                             state.mode = InteractionMode::Browse;
                             if let Some(effect) = state.start_preview(image_id) {
                                 effects.push(effect);

@@ -19,7 +19,7 @@ Implement the application as a Rust workspace with a platform-independent `image
     - Exercise overflow rejection, malformed/unsupported values, crop-bound validation, adjustment-range validation, and safe visible-error construction.
     - _Requirements: 4.4-4.6, 5.3-5.8, 9.3, 9.6_
 
-- [ ] 2. Implement capability detection, collection discovery, and conservative projections
+- [x] 2. Implement capability detection, collection discovery, and conservative projections
   - [x] 2.1 Implement the codec registry and startup capability snapshot
     - Add portable JPEG/PNG/TIFF registration and decode/encode self-check interfaces; model optional HEIC decode/encode availability independently with human-readable diagnostics.
     - Return a complete immutable `CapabilitySnapshot` before open-folder or export commands can be accepted.
@@ -36,7 +36,7 @@ Implement the application as a Rust workspace with a platform-independent `image
     - Derive selectable image entries, export format choices, disabled dependent operations, and non-blocking availability messages from independent format and dialog capabilities.
     - Ensure JPEG/PNG/TIFF operations remain usable when HEIC capability is unavailable.
     - _Requirements: 7.1, 8.1, 9.2-9.8, 11.2, 11.3_
-  - [-] 2.5 Write property test for conservative capability projection
+  - [x] 2.5 Write property test for conservative capability projection
     - **Property 9: Capability projection is conservative and format-specific.**
     - Generate decode/encode/folder-picker/save-picker truth tables and verify enabled controls, notices, and format choices against the requirement matrix.
     - **Validates: Requirements 7.1, 8.1, 9.1-9.8, 11.2, 11.3.**
@@ -84,7 +84,7 @@ Implement the application as a Rust workspace with a platform-independent `image
     - Add focus, one-step clamped increase/decrease, preview application order, and `Return` commit behavior including zero-value operations and focused-draft reset.
     - Use specified fixed-point rounding/clamping while leaving alpha unchanged and preserving preview/state for no-active commands.
     - _Requirements: 5.1-5.12, 6.3_
-  - [-] 5.2 Write property test for adjustment clamping and commits
+  - [x] 5.2 Write property test for adjustment clamping and commits
     - **Property 6: Adjustment commands are clamped and commit exactly their draft.**
     - Generate focused adjustment command sequences and values to verify bounds, identity at zero, exact single commit, reset, and matching pixels.
     - **Validates: Requirements 5.1-5.11.**
@@ -104,63 +104,63 @@ Implement the application as a Rust workspace with a platform-independent `image
     - Generate defined shortcut intents and raw event variants; compare macOS/Linux semantic commands and reject releases/repeats.
     - **Validates: Requirements 8.3, 8.5, 8.6, 10.3, 10.4.**
 
-- [~] 6. Checkpoint - Ensure core tests pass
+- [x] 6. Checkpoint - Ensure core tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 7. Add guarded codecs, filesystem operations, and non-destructive export
-  - [-] 7.1 Implement bounded codec decode/encode adapters
+  - [x] 7.1 Implement bounded codec decode/encode adapters
     - Implement `ImageCodec` dispatch, resource limits, malformed-file failures, portable lossless PNG/TIFF conversion, JPEG encoding, and runtime-probed optional HEIC registration.
     - Keep unavailable codec capability distinct from a content decode failure.
     - _Requirements: 1.5-1.7, 7.7, 9.1, 9.5-9.8_
-  - [-] 7.2 Write codec integration tests with real fixtures
+  - [x] 7.2 Write codec integration tests with real fixtures
     - Test JPEG/PNG/TIFF decode/encode, malformed supported content, resource-limit failures, PNG/TIFF sample equivalence, JPEG tolerance, and HEIC cases only when the detected adapter is available.
     - _Requirements: 1.5-1.7, 7.7, 9.5, 9.6_
   - [x] 7.3 Implement file identity checks and export planning
     - Add source/target identity resolution and `ExportPlan` validation that rejects source targets and pre-existing regular targets before opening a writer, retaining immutable source identity and document revision.
     - _Requirements: 7.2-7.6_
-  - [-] 7.4 Write property test for non-replacement export planning
+  - [x] 7.4 Write property test for non-replacement export planning
     - **Property 11: Export planning never permits replacement.**
     - Generate source and destination identity/existence combinations to verify all conflicts are rejected and valid plans retain source identity and revision.
     - **Validates: Requirements 7.2-7.6.**
-  - [-] 7.5 Implement create-new export execution and typed completion handling
+  - [x] 7.5 Implement create-new export execution and typed completion handling
     - Render the planned full-resolution result, encode through a sibling temporary/new destination, flush, publish only without replacement, clean up only attempt-created failures, and report path-specific errors without state mutation.
     - _Requirements: 7.2-7.7_
-  - [~] 7.6 Write filesystem/export integration tests
+  - [-] 7.6 Write filesystem/export integration tests
     - Use temporary directories to verify source and existing target bytes survive conflicts/failures, create-new races fail safely, and reopened portable exports meet format-appropriate equivalence.
     - _Requirements: 7.2-7.7_
 
 - [ ] 8. Implement platform adapters and the single-window desktop workspace
-  - [~] 8.1 Implement macOS/Linux platform capability, dialog, and filesystem adapters
+  - [-] 8.1 Implement macOS/Linux platform capability, dialog, and filesystem adapters
     - Probe native folder/save dialog availability before requests; use `rfd` backends with macOS and XDG Portal/GTK Linux detection, map runtime loss to availability notices, and provide platform file identities.
     - Keep unavailable platform integrations non-fatal and disable only their dependent operations.
     - _Requirements: 1.1, 7.1, 9.1, 9.2, 9.7, 11.2-11.5_
-  - [~] 8.2 Write platform adapter integration tests
+  - [x] 8.2 Write platform adapter integration tests
     - On hosted macOS/Linux runners, test capability probe ordering, single-folder/single-path dialog configuration, runtime dialog failure downgrade, and filesystem identity behavior; gate non-automatable native interactions.
     - _Requirements: 1.1, 7.1, 9.1, 9.2, 9.7, 11.4, 11.5_
-  - [~] 8.3 Implement the eframe application host and worker orchestration
+  - [x] 8.3 Implement the eframe application host and worker orchestration
     - Start exactly one primary window, construct capabilities before enabling requests, execute dialogs on the UI thread and I/O/render/export effects on a bounded worker executor, then return typed reducer completions.
     - _Requirements: 8.4, 9.1, 10.5, 11.2_
-  - [~] 8.4 Implement the capability-aware egui workspace and preview texture cache
+  - [x] 8.4 Implement the capability-aware egui workspace and preview texture cache
     - Render collection, complete active filename, preview/empty/pending/error states, source-pixel crop overlay conversion, and all applicable visible command controls in the sole window.
     - Bind controls and normalized keys to the shared command router; disable unavailable/inapplicable operations with explanatory notices and upload GPU textures only for new preview revisions.
     - _Requirements: 1.4, 4.3-4.4, 8.1-8.6, 9.3-9.7, 11.2_
-  - [~] 8.5 Write desktop integration and visual regression tests
+  - [x] 8.5 Write desktop integration and visual regression tests
     - Verify one-window startup, complete control visibility with an active image, complete filename display, one reducer command per accepted key press, source-pixel crop overlay conversion, disabled-capability notices, and platform-specific shortcut labels.
     - _Requirements: 4.3-4.4, 8.1-8.6, 9.3-9.7, 11.2_
 
 - [ ] 9. Wire cross-platform conformance and distributable capability metadata
-  - [~] 9.1 Implement conformance fixtures, deterministic result serialization, and cross-platform pipeline harness
+  - [x] 9.1 Implement conformance fixtures, deterministic result serialization, and cross-platform pipeline harness
     - Add fixed lossless PNG fixtures and execute shared operation/draft sequences through both runtime command tables; serialize normalized dimensions, crop state, and RGBA16 samples for comparison.
     - _Requirements: 7.7, 10.1-10.5_
-  - [~] 9.2 Write property test for shared pipeline equivalence
+  - [x] 9.2 Write property test for shared pipeline equivalence
     - **Property 10: Shared pipeline is platform-equivalent.**
     - Generate valid operation/draft sequences over conformance images and verify platform-table equivalence plus PNG/TIFF lossless encode/decode samples.
     - **Validates: Requirements 7.7, 10.1, 10.2, 10.5.**
-  - [~] 9.3 Add target-specific package manifests and capability manifest generation
+  - [x] 9.3 Add target-specific package manifests and capability manifest generation
     - Create macOS and Linux packaging/build configuration that records target, locked toolchain, portable codecs, optional HEIC provider, and selected dialog backend in machine-readable `capabilities.json`.
     - Preserve feature/runtime separation so package metadata never becomes startup truth or a hidden optional-dependency requirement.
     - _Requirements: 11.1-11.3_
-  - [~] 9.4 Write packaging smoke and cross-platform integration tests
+  - [x] 9.4 Write packaging smoke and cross-platform integration tests
     - On macOS and Linux CI runners, verify package startup opens one window with optional HEIC/dialog dependencies both present and absent, and compare conformance artifacts plus PNG/TIFF export-reopen results.
     - _Requirements: 8.4, 10.1, 10.2, 10.5, 11.1-11.5_
   - [~] 9.5 Wire the final application composition and CI quality gates
@@ -168,7 +168,7 @@ Implement the application as a Rust workspace with a platform-independent `image
     - Ensure all implemented code paths are reachable from the primary window and all optional feature combinations compile.
     - _Requirements: 1.1-11.5_
 
-- [~] 10. Final checkpoint - Ensure all tests pass
+- [x] 10. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes

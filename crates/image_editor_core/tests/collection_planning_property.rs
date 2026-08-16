@@ -8,6 +8,9 @@ use image_editor_core::{
 };
 use proptest::prelude::*;
 
+type ReferenceEntry = (String, String, ImageFormat);
+type ReferencePlan = (Vec<ReferenceEntry>, Vec<ReferenceEntry>);
+
 #[derive(Clone, Debug)]
 struct GeneratedDirectoryEntry {
     file_stem: String,
@@ -149,10 +152,7 @@ fn capabilities(capability_bits: [bool; 8]) -> CapabilitySnapshot {
 fn reference_plan(
     entries: &[GeneratedDirectoryEntry],
     decode_capabilities: [bool; 4],
-) -> (
-    Vec<(String, String, ImageFormat)>,
-    Vec<(String, String, ImageFormat)>,
-) {
+) -> ReferencePlan {
     let can_decode = |format| match format {
         ImageFormat::Jpeg => decode_capabilities[0],
         ImageFormat::Png => decode_capabilities[1],

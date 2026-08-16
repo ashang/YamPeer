@@ -12,11 +12,19 @@ description = "Desktop host boundary for Image Editor"
 name = "image-editor"
 path = "src/main.rs"
 
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "generate-capabilities"
+path = "src/bin/generate_capabilities.rs"
+
 [features]
 default = ["portable-codecs", "native-window"]
 native-window = ["dep:eframe"]
 portable-codecs = ["image_editor_codecs/portable-codecs"]
 heic = ["image_editor_codecs/heic"]
+macos-dialogs = ["image_editor_platform/macos-dialogs"]
 xdg-portal = ["image_editor_platform/xdg-portal"]
 gtk = ["image_editor_platform/gtk"]
 
