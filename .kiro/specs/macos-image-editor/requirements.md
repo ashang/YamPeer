@@ -56,6 +56,12 @@ Image Editor 是一款面向 macOS 和 Linux 用户的桌面图片浏览与基�
 - **Installable_Platform_Package**：可在一个 Supported_Platform 上安装 Image_Editor 的分发工件，并包含或声明可用于提供 Image_Editor 能力的 Runtime_Dependency。
 - **Application_Error**：Image_Editor 无法完成用户请求时产生的可显示错误状态。
 - **Availability_Message**：Image_Editor 显示在 Primary_Main_Window 的相关图片列表区域或格式选择界面中的非阻塞可见状态说明。
+- **Bundled_Font_Resource**：Installable_Platform_Package 内随应用分发、许可与应用分发兼容的字体资源；该资源至少包含 `U+0020–U+007E`、`U+00A0–U+00FF`、`U+2000–U+206F`、`U+2190–U+21FF`、`U+2500–U+257F`、`U+3000–U+303F`、`U+3400–U+4DBF`、`U+4E00–U+9FFF`、`U+F900–U+FAFF` 和 `U+FF00–U+FFEF` 范围内应用可能显示的字符的可辨认字形。
+- **Required_Text**：Image_Editor 的中文 UI 文案、包含 Bundled_Font_Resource 覆盖范围内字符的中文文件名，以及包含这些字符的 Availability_Message 或 Application_Error。
+- **Desktop_Host**：在 Supported_Platform 上创建 Primary_Main_Window、配置 egui 上下文并承载 Image_Editor 工作区的桌面应用层。
+- **Font_Configuration**：Desktop_Host 在创建 Primary_Main_Window 的工作区之前构造 `egui::FontDefinitions`，将 Bundled_Font_Resource 注册为中文、常用拉丁字符和界面符号的优先字体及回退字体的配置。
+- **Font_Initialization_Failure**：Bundled_Font_Resource 无法读取、字体数据无法被 Font_Configuration 接受，或 Font_Configuration 无法在首次工作区绘制前注册的状态。
+- **Startup_Availability_Error**：Font_Initialization_Failure 发生时显示的安全、可见错误状态；该状态不包含堆栈跟踪、原始字体数据或其他敏感诊断数据。
 
 ## Requirements
 
@@ -178,6 +184,9 @@ Image Editor 是一款面向 macOS 和 Linux 用户的桌面图片浏览与基�
 4. WHEN Image_Editor starts on a Supported_Platform, THE Image_Editor SHALL display exactly one Primary_Main_Window that provides the image-browsing and image-editing capabilities defined in this document.
 5. WHEN Image_Editor runs on macOS, THE Image_Editor SHALL use macOS-visible names for Command and Option modifiers in every keyboard shortcut label.
 6. WHEN Image_Editor runs on Linux, THE Image_Editor SHALL use Linux-visible names for Control and Alt modifiers in every keyboard shortcut label.
+7. WHEN Image_Editor displays Required_Text on a Supported_Platform, THE Image_Editor SHALL render every Required_Text character covered by Bundled_Font_Resource as a recognizable character rather than a missing-glyph box.
+8. WHEN Desktop_Host prepares to create the Primary_Main_Window, THE Desktop_Host SHALL register Font_Configuration through `egui::FontDefinitions` before creating the Primary_Main_Window and before Required_Text can be displayed.
+9. IF Font_Initialization_Failure occurs, THEN THE Image_Editor SHALL display a Startup_Availability_Error, prevent the normal editing workspace from accepting browsing or editing commands, and terminate or remain in the Startup_Availability_Error state without rendering Required_Text with missing-glyph boxes.
 
 ### Requirement 9: Determine Available Image and Platform Capabilities
 
@@ -217,3 +226,5 @@ Image Editor 是一款面向 macOS 和 Linux 用户的桌面图片浏览与基�
 3. WHEN Image_Editor starts on a Supported_Platform and the detected capabilities required by a Dependent_Operation are available, THE Image_Editor SHALL enable the Dependent_Operation without requesting the user to install a Runtime_Dependency during that application session.
 4. WHERE the Platform_Integration_Capability for selecting a local folder is available, WHEN a user invokes the open-folder action, THE Image_Editor SHALL present the corresponding Platform_File_Chooser.
 5. WHERE the Platform_Integration_Capability for selecting a local export file path is available, WHEN a user invokes the export action, THE Image_Editor SHALL present the corresponding Platform_File_Chooser.
+6. WHEN Image_Editor is distributed for a Supported_Platform, THE Installable_Platform_Package SHALL include a Bundled_Font_Resource and identify the Bundled_Font_Resource license and resource path in package metadata.
+7. IF an Installable_Platform_Package cannot provide a readable Bundled_Font_Resource at startup, THEN THE Image_Editor SHALL produce a Startup_Availability_Error before accepting browsing or editing commands.
