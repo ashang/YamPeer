@@ -7,8 +7,9 @@
 pub mod keybindings;
 
 pub use keybindings::{
-    KeybindingParseResult, PartialKeybindingConfiguration, ValidatedKeybindingConfiguration,
-    format_keybinding_configuration, parse_keybinding_configuration,
+    KeybindingLayerInput, KeybindingParseResult, KeybindingResolution,
+    PartialKeybindingConfiguration, ValidatedKeybindingConfiguration,
+    format_keybinding_configuration, parse_keybinding_configuration, resolve_keybindings,
 };
 
 use std::{collections::BTreeMap, fmt, path::Path};
@@ -3303,141 +3304,241 @@ impl RawKeyEvent {
     }
 }
 
-/// Resolves normalized desktop key events into the shared semantic command set.
+/// Resolves normalized desktop key events through an immutable effective map.
 ///
 /// A resolver returns at most one command for an event. It only accepts a
 /// non-repeat press that was not consumed by a text-capable control; releases,
-/// repeats, and all other key/modifier combinations are ignored.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// repeats, and all other key/modifier combinations are ignored. The map is the
+/// sole source of routing truth, so configured aliases and overrides use the
+/// same command path as built-in bindings.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ShortcutResolver {
-    platform: RuntimePlatform,
+    keybindings: EffectiveKeybindingMap,
 }
 
 impl ShortcutResolver {
-    pub const fn new(platform: RuntimePlatform) -> Self {
-        Self { platform }
+    pub fn new(keybindings: EffectiveKeybindingMap) -> Self {
+        Self { keybindings }
     }
 
-    pub const fn platform(self) -> RuntimePlatform {
-        self.platform
+    pub fn keybindings(&self) -> &EffectiveKeybindingMap {
+        &self.keybindings
     }
 
-    pub fn resolve(self, event: RawKeyEvent) -> Option<EditorCommand> {
+    pub fn resolve(&self, event: RawKeyEvent) -> Option<EditorCommand> {
         if !event.pressed || event.repeat || event.consumed_by_text_control {
             return None;
         }
 
-        let key = event.key.normalized();
-        let modifiers = event.modifiers;
-        let primary = |shift| match self.platform {
-            RuntimePlatform::MacOs => modifiers.is_macos_primary(shift),
-            RuntimePlatform::Linux => modifiers.is_linux_primary(shift),
-        };
-        let adjustment = match self.platform {
-            RuntimePlatform::MacOs => modifiers.is_macos_adjustment(),
-            RuntimePlatform::Linux => modifiers.is_linux_adjustment(),
-        };
-
-        if key == ShortcutKey::Character('z') {
-            if primary(false) {
-                return Some(EditorCommand::Undo);
-            }
-            if primary(true) {
-                return Some(EditorCommand::Redo);
-            }
-        }
-
-        if adjustment {
-            return match key {
-                ShortcutKey::ArrowUp => Some(EditorCommand::IncreaseAdjustment),
-                ShortcutKey::ArrowDown => Some(EditorCommand::DecreaseAdjustment),
-                _ => None,
-            };
-        }
-
-        match (key, modifiers.is_plain(false), modifiers.is_plain(true)) {
-            (ShortcutKey::ArrowLeft, true, _) => Some(EditorCommand::Navigate {
-                direction: NavigationDirection::Left,
-            }),
-            (ShortcutKey::ArrowRight, true, _) => Some(EditorCommand::Navigate {
-                direction: NavigationDirection::Right,
-            }),
-            (ShortcutKey::Home, true, _) => Some(EditorCommand::Navigate {
-                direction: NavigationDirection::Home,
-            }),
-            (ShortcutKey::End, true, _) => Some(EditorCommand::Navigate {
-                direction: NavigationDirection::End,
-            }),
-            (ShortcutKey::Character('f'), true, false) => Some(EditorCommand::FlipHorizontal),
-            (ShortcutKey::Character('f'), false, true) => Some(EditorCommand::FlipVertical),
-            (ShortcutKey::Character('r'), true, false) => Some(EditorCommand::RotateClockwise90),
-            (ShortcutKey::Character('r'), false, true) => {
-                Some(EditorCommand::RotateCounterclockwise90)
-            }
-            (ShortcutKey::Character('c'), true, false) => Some(EditorCommand::EnterCrop),
-            (ShortcutKey::Character('b'), true, false) => {
-                Some(EditorCommand::FocusAdjustment(AdjustmentKind::Brightness))
-            }
-            (ShortcutKey::Character('d'), true, false) => {
-                Some(EditorCommand::FocusAdjustment(AdjustmentKind::Contrast))
-            }
-            (ShortcutKey::Enter, true, false) => Some(EditorCommand::CommitAdjustment),
-            _ => None,
-        }
+        let gesture = KeybindingGesture::new(event.key, event.modifiers);
+        self.keybindings
+            .action_for(gesture)
+            .map(editor_command_for_keybinding_action)
     }
 }
 
-/// Resolves one raw event through the table for the supplied runtime platform.
-pub fn resolve_shortcut(platform: RuntimePlatform, event: RawKeyEvent) -> Option<EditorCommand> {
-    ShortcutResolver::new(platform).resolve(event)
+/// Resolves one raw event through the supplied immutable effective map.
+pub fn resolve_shortcut(
+    keybindings: &EffectiveKeybindingMap,
+    event: RawKeyEvent,
+) -> Option<EditorCommand> {
+    if !event.pressed || event.repeat || event.consumed_by_text_control {
+        return None;
+    }
+    keybindings
+        .action_for(KeybindingGesture::new(event.key, event.modifiers))
+        .map(editor_command_for_keybinding_action)
 }
 
-/// Returns the user-visible shortcut label for a semantic editor command.
+/// Maps every keyboard-configurable action to its shared reducer command.
+pub fn editor_command_for_keybinding_action(action: KeybindingAction) -> EditorCommand {
+    match action {
+        KeybindingAction::FitToWindow => EditorCommand::SetFitToWindow,
+        KeybindingAction::ZoomActual => EditorCommand::SetManualZoom { percent: 100 },
+        KeybindingAction::Zoom200 => EditorCommand::SetManualZoom { percent: 200 },
+        KeybindingAction::ZoomIn => EditorCommand::ZoomByStep {
+            direction: ZoomDirection::In,
+        },
+        KeybindingAction::ZoomOut => EditorCommand::ZoomByStep {
+            direction: ZoomDirection::Out,
+        },
+        KeybindingAction::PanLeft => EditorCommand::PanCanvas {
+            direction: PanDirection::Left,
+        },
+        KeybindingAction::PanDown => EditorCommand::PanCanvas {
+            direction: PanDirection::Down,
+        },
+        KeybindingAction::PanUp => EditorCommand::PanCanvas {
+            direction: PanDirection::Up,
+        },
+        KeybindingAction::PanRight => EditorCommand::PanCanvas {
+            direction: PanDirection::Right,
+        },
+        KeybindingAction::PreviousImage => EditorCommand::Navigate {
+            direction: NavigationDirection::Left,
+        },
+        KeybindingAction::NextImage => EditorCommand::Navigate {
+            direction: NavigationDirection::Right,
+        },
+        KeybindingAction::FirstImage => EditorCommand::Navigate {
+            direction: NavigationDirection::Home,
+        },
+        KeybindingAction::LastImage => EditorCommand::Navigate {
+            direction: NavigationDirection::End,
+        },
+        KeybindingAction::ToggleFullscreen => EditorCommand::ToggleFullscreen,
+        KeybindingAction::FlipHorizontal => EditorCommand::FlipHorizontal,
+        KeybindingAction::FlipVertical => EditorCommand::FlipVertical,
+        KeybindingAction::RotateClockwise90 => EditorCommand::RotateClockwise90,
+        KeybindingAction::RotateCounterclockwise90 => EditorCommand::RotateCounterclockwise90,
+        KeybindingAction::EnterCrop => EditorCommand::EnterCrop,
+        KeybindingAction::FocusBrightness => {
+            EditorCommand::FocusAdjustment(AdjustmentKind::Brightness)
+        }
+        KeybindingAction::FocusContrast => EditorCommand::FocusAdjustment(AdjustmentKind::Contrast),
+        KeybindingAction::CommitAdjustment => EditorCommand::CommitAdjustment,
+        KeybindingAction::Undo => EditorCommand::Undo,
+        KeybindingAction::Redo => EditorCommand::Redo,
+        KeybindingAction::IncreaseAdjustment => EditorCommand::IncreaseAdjustment,
+        KeybindingAction::DecreaseAdjustment => EditorCommand::DecreaseAdjustment,
+    }
+}
+
+/// Finds the configured action corresponding to a command control.
 ///
-/// macOS labels name Command and Option; Linux labels name Control and Alt.
-/// Commands without a defined keyboard input return `None` rather than a
-/// misleading label.
-pub fn shortcut_label(platform: RuntimePlatform, command: &EditorCommand) -> Option<String> {
-    let label = match command {
-        EditorCommand::Undo => match platform {
-            RuntimePlatform::MacOs => "Command+Z",
-            RuntimePlatform::Linux => "Control+Z",
-        },
-        EditorCommand::Redo => match platform {
-            RuntimePlatform::MacOs => "Command+Shift+Z",
-            RuntimePlatform::Linux => "Control+Shift+Z",
-        },
-        EditorCommand::IncreaseAdjustment => match platform {
-            RuntimePlatform::MacOs => "Option+Up",
-            RuntimePlatform::Linux => "Alt+Up",
-        },
-        EditorCommand::DecreaseAdjustment => match platform {
-            RuntimePlatform::MacOs => "Option+Down",
-            RuntimePlatform::Linux => "Alt+Down",
-        },
+/// Commands without a keyboard action, such as crop confirmation and export,
+/// intentionally return `None` so the UI never advertises a fabricated key.
+pub fn keybinding_action_for_command(command: &EditorCommand) -> Option<KeybindingAction> {
+    match command {
+        EditorCommand::SetFitToWindow => Some(KeybindingAction::FitToWindow),
+        EditorCommand::SetManualZoom { percent: 100 } => Some(KeybindingAction::ZoomActual),
+        EditorCommand::SetManualZoom { percent: 200 } => Some(KeybindingAction::Zoom200),
+        EditorCommand::ZoomByStep {
+            direction: ZoomDirection::In,
+        } => Some(KeybindingAction::ZoomIn),
+        EditorCommand::ZoomByStep {
+            direction: ZoomDirection::Out,
+        } => Some(KeybindingAction::ZoomOut),
+        EditorCommand::PanCanvas {
+            direction: PanDirection::Left,
+        } => Some(KeybindingAction::PanLeft),
+        EditorCommand::PanCanvas {
+            direction: PanDirection::Down,
+        } => Some(KeybindingAction::PanDown),
+        EditorCommand::PanCanvas {
+            direction: PanDirection::Up,
+        } => Some(KeybindingAction::PanUp),
+        EditorCommand::PanCanvas {
+            direction: PanDirection::Right,
+        } => Some(KeybindingAction::PanRight),
         EditorCommand::Navigate {
             direction: NavigationDirection::Left,
-        } => "Left",
+        } => Some(KeybindingAction::PreviousImage),
         EditorCommand::Navigate {
             direction: NavigationDirection::Right,
-        } => "Right",
+        } => Some(KeybindingAction::NextImage),
         EditorCommand::Navigate {
             direction: NavigationDirection::Home,
-        } => "Home",
+        } => Some(KeybindingAction::FirstImage),
         EditorCommand::Navigate {
             direction: NavigationDirection::End,
-        } => "End",
-        EditorCommand::FlipHorizontal => "F",
-        EditorCommand::FlipVertical => "Shift+F",
-        EditorCommand::RotateClockwise90 => "R",
-        EditorCommand::RotateCounterclockwise90 => "Shift+R",
-        EditorCommand::EnterCrop => "C",
-        EditorCommand::FocusAdjustment(AdjustmentKind::Brightness) => "B",
-        EditorCommand::FocusAdjustment(AdjustmentKind::Contrast) => "D",
-        EditorCommand::CommitAdjustment => "Return",
-        _ => return None,
-    };
-    Some(label.to_owned())
+        } => Some(KeybindingAction::LastImage),
+        EditorCommand::ToggleFullscreen => Some(KeybindingAction::ToggleFullscreen),
+        EditorCommand::FlipHorizontal => Some(KeybindingAction::FlipHorizontal),
+        EditorCommand::FlipVertical => Some(KeybindingAction::FlipVertical),
+        EditorCommand::RotateClockwise90 => Some(KeybindingAction::RotateClockwise90),
+        EditorCommand::RotateCounterclockwise90 => Some(KeybindingAction::RotateCounterclockwise90),
+        EditorCommand::EnterCrop => Some(KeybindingAction::EnterCrop),
+        EditorCommand::FocusAdjustment(AdjustmentKind::Brightness) => {
+            Some(KeybindingAction::FocusBrightness)
+        }
+        EditorCommand::FocusAdjustment(AdjustmentKind::Contrast) => {
+            Some(KeybindingAction::FocusContrast)
+        }
+        EditorCommand::CommitAdjustment => Some(KeybindingAction::CommitAdjustment),
+        EditorCommand::Undo => Some(KeybindingAction::Undo),
+        EditorCommand::Redo => Some(KeybindingAction::Redo),
+        EditorCommand::IncreaseAdjustment => Some(KeybindingAction::IncreaseAdjustment),
+        EditorCommand::DecreaseAdjustment => Some(KeybindingAction::DecreaseAdjustment),
+        _ => None,
+    }
+}
+
+/// Returns all configured, platform-visible labels for one action.
+///
+/// macOS labels use Command and Option; Linux labels use Control and Alt as
+/// represented by the current effective map. Actions without bindings return
+/// `None` rather than a misleading fixed-table label.
+pub fn shortcut_label(
+    platform: RuntimePlatform,
+    keybindings: &EffectiveKeybindingMap,
+    action: KeybindingAction,
+) -> Option<String> {
+    let gestures = keybindings.gestures_for(action);
+    (!gestures.is_empty()).then(|| {
+        gestures
+            .iter()
+            .copied()
+            .map(|gesture| format_shortcut_gesture(platform, gesture))
+            .collect::<Vec<_>>()
+            .join(" / ")
+    })
+}
+
+fn format_shortcut_gesture(platform: RuntimePlatform, gesture: KeybindingGesture) -> String {
+    let mut parts = Vec::<String>::with_capacity(6);
+    let mut push = |label: &str| parts.push(label.to_owned());
+    match platform {
+        RuntimePlatform::MacOs => {
+            if gesture.modifiers.control {
+                push("Control");
+            }
+            if gesture.modifiers.command {
+                push("Command");
+            }
+            if gesture.modifiers.option {
+                push("Option");
+            }
+            if gesture.modifiers.alt {
+                push("Alt");
+            }
+        }
+        RuntimePlatform::Linux => {
+            if gesture.modifiers.control {
+                push("Control");
+            }
+            if gesture.modifiers.command {
+                push("Command");
+            }
+            if gesture.modifiers.alt {
+                push("Alt");
+            }
+            if gesture.modifiers.option {
+                push("Option");
+            }
+        }
+    }
+    if gesture.modifiers.shift {
+        push("Shift");
+    }
+    parts.push(match gesture.key {
+        ShortcutKey::Character(character) => match character {
+            '+' => "+".to_owned(),
+            character => character.to_ascii_uppercase().to_string(),
+        },
+        ShortcutKey::ArrowUp => "Up".to_owned(),
+        ShortcutKey::ArrowDown => "Down".to_owned(),
+        ShortcutKey::ArrowLeft => "Left".to_owned(),
+        ShortcutKey::ArrowRight => "Right".to_owned(),
+        ShortcutKey::PageUp => "PageUp".to_owned(),
+        ShortcutKey::PageDown => "PageDown".to_owned(),
+        ShortcutKey::Home => "Home".to_owned(),
+        ShortcutKey::End => "End".to_owned(),
+        ShortcutKey::Enter => "Return".to_owned(),
+        ShortcutKey::Space => "Space".to_owned(),
+        ShortcutKey::F11 => "F11".to_owned(),
+    });
+    parts.join("+")
 }
 
 /// A semantic request or typed completion handled by the pure editor reducer.

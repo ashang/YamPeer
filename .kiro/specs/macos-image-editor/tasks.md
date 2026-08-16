@@ -203,19 +203,19 @@ Implement the application as a Rust workspace with a platform-independent `image
     - Add exact-version `toml` and serialization dependencies to the workspace lockfile and implement `[bindings]`, `[macos.bindings]`, and `[linux.bindings]` parsing in a new pure-core keybindings module.
     - Canonicalize supported key/modifier spelling, support one-or-more bindings per action, reject unknown actions/keys and illegal platform modifiers with source-aware diagnostics, and format validated declarations into canonical TOML.
     - _Requirements: 12.2-12.4_
-  - [-] 12.3 Write property test for TOML binding round-trip
+  - [x] 12.3 Write property test for TOML binding round-trip
     - **Property 12: TOML bindings round-trip and preserve aliases.**
     - Generate validated global and platform-specific multi-binding declarations; verify formatter/parser equivalence and canonical gesture ordering in at least 100 cases.
     - **Validates: Requirements 12.2.**
-  - [~] 12.4 Implement layer discovery, partial merging, and conflict-safe fallback
+  - [x] 12.4 Implement layer discovery, partial merging, and conflict-safe fallback
     - In `image_editor_platform` and `image_editor_desktop`, resolve explicit CLI, project, macOS/Linux user, and built-in sources in priority order; treat absent optional files distinctly from unreadable files.
     - In the pure core, merge only declared valid actions, reject same-layer duplicate gestures as a group, prevent lower-priority collisions from dispatching multiple actions, and retain unaffected lower declarations with safe non-modal diagnostics.
     - _Requirements: 12.1, 12.4-12.5_
-  - [~] 12.5 Write property test for layer precedence and partial fallback
+  - [x] 12.5 Write property test for layer precedence and partial fallback
     - **Property 13: Layered partial overrides retain valid lower declarations.**
     - Generate ordered layer declarations, parse/read failures, partial action sets, and insertion orders; verify deterministic per-action precedence, fallback, and diagnostics in at least 100 cases.
     - **Validates: Requirements 12.1, 12.3-12.5.**
-  - [~] 12.6 Replace fixed shortcut tables with effective-map routing
+  - [-] 12.6 Replace fixed shortcut tables with effective-map routing
     - Refactor `ShortcutResolver` and `shortcut_label` to use the resolved effective map while retaining one-command-per-pressed-non-repeat-event semantics.
     - Route all existing edit/history/adjustment actions and the new navigation, zoom, pan, and full-screen actions through the same map; ignore every event marked consumed by a text-capable control.
     - _Requirements: 12.3, 12.5, 12.9, 12.12_

@@ -472,3 +472,168 @@ pub fn declarations_for_platform(
     declarations.extend(platform_bindings.clone());
     declarations
 }
+
+/// One configuration layer supplied in descending precedence order.
+///
+/// Filesystem adapters construct these values after they have distinguished an
+/// absent optional file from an unreadable file. The core only receives parsed
+/// declarations and safe diagnostics, so it remains independent of paths,
+/// environment variables, and I/O failures.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KeybindingLayerInput {
+    source: KeybindingSource,
+    configuration: Option<PartialKeybindingConfiguration>,
+    diagnostics: Vec<KeybindingDiagnostic>,
+}
+
+impl KeybindingLayerInput {
+    /// Wraps the parser output for one readable source.
+    pub fn from_parse_result(source: KeybindingSource, result: KeybindingParseResult) -> Self {
+        Self {
+            source,
+            configuration: result.configuration,
+            diagnostics: result.diagnostics,
+        }
+    }
+
+    /// Represents a source that could not be read. It contributes no
+    /// declarations, allowing every lower-priority layer to remain eligible.
+    pub fn unreadable(source: KeybindingSource) -> Self {
+        Self {
+            source: source.clone(),
+            configuration: None,
+            diagnostics: vec![KeybindingDiagnostic::new(
+                source,
+                None,
+                None,
+                KeybindingDiagnosticKind::ReadFailed,
+                "keybinding configuration could not be read",
+            )],
+        }
+    }
+
+    /// Creates the final built-in layer for a platform.
+    pub fn built_in(platform: RuntimePlatform) -> Self {
+        let bindings = crate::built_in_keybinding_map(platform).by_action().clone();
+        let configuration = match platform {
+            RuntimePlatform::MacOs => {
+                ValidatedKeybindingConfiguration::new(BTreeMap::new(), bindings, BTreeMap::new())
+            }
+            RuntimePlatform::Linux => {
+                ValidatedKeybindingConfiguration::new(BTreeMap::new(), BTreeMap::new(), bindings)
+            }
+        };
+        Self {
+            source: KeybindingSource::BuiltIn,
+            configuration: Some(configuration),
+            diagnostics: Vec::new(),
+        }
+    }
+
+    pub fn source(&self) -> &KeybindingSource {
+        &self.source
+    }
+}
+
+/// The immutable effective map and all safe diagnostics emitted while layering.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KeybindingResolution {
+    pub effective_map: crate::EffectiveKeybindingMap,
+    pub diagnostics: Vec<KeybindingDiagnostic>,
+}
+
+/// Resolves parsed layers in caller-supplied descending priority order.
+///
+/// A layer changes only actions it successfully contributes. Conflicting
+/// gestures within one layer reject every involved action as a group. A lower
+/// layer never replaces a gesture accepted above it; its unaffected gestures
+/// remain usable and each blocked candidate receives a source-aware diagnostic.
+pub fn resolve_keybindings(
+    platform: RuntimePlatform,
+    layers: &[KeybindingLayerInput],
+) -> KeybindingResolution {
+    let mut diagnostics = Vec::new();
+    let mut accepted_bindings = BTreeMap::new();
+    let mut accepted_gestures = BTreeMap::new();
+    let mut replaced_actions = std::collections::BTreeSet::new();
+
+    for layer in layers {
+        diagnostics.extend(layer.diagnostics.clone());
+        let Some(configuration) = &layer.configuration else {
+            continue;
+        };
+        let declarations = declarations_for_platform(configuration, platform);
+        let rejected_actions = duplicate_actions_in_layer(&declarations, layer, &mut diagnostics);
+
+        for (action, gestures) in declarations {
+            if rejected_actions.contains(&action) || replaced_actions.contains(&action) {
+                continue;
+            }
+
+            let retained = gestures
+                .into_iter()
+                .filter(|gesture| match accepted_gestures.get(gesture) {
+                    Some(existing_action) => {
+                        diagnostics.push(KeybindingDiagnostic::new(
+                            layer.source.clone(),
+                            Some(action),
+                            Some(format_gesture(*gesture)),
+                            KeybindingDiagnosticKind::BlockedByHigherPriority,
+                            "a higher-priority keybinding layer already uses this gesture",
+                        ));
+                        debug_assert_ne!(*existing_action, action);
+                        false
+                    }
+                    None => true,
+                })
+                .collect::<Vec<_>>();
+
+            if retained.is_empty() {
+                continue;
+            }
+
+            for gesture in &retained {
+                accepted_gestures.insert(*gesture, action);
+            }
+            accepted_bindings.insert(action, retained);
+            replaced_actions.insert(action);
+        }
+    }
+
+    KeybindingResolution {
+        effective_map: crate::EffectiveKeybindingMap::try_from_bindings(accepted_bindings)
+            .expect("layer resolution retains every normalized gesture at most once"),
+        diagnostics,
+    }
+}
+
+fn duplicate_actions_in_layer(
+    declarations: &ActionBindings,
+    layer: &KeybindingLayerInput,
+    diagnostics: &mut Vec<KeybindingDiagnostic>,
+) -> std::collections::BTreeSet<KeybindingAction> {
+    let mut owners = BTreeMap::<KeybindingGesture, Vec<KeybindingAction>>::new();
+    for (action, gestures) in declarations {
+        for gesture in gestures {
+            owners.entry(*gesture).or_default().push(*action);
+        }
+    }
+
+    let mut rejected = std::collections::BTreeSet::new();
+    for (gesture, actions) in owners {
+        if actions.len() < 2 {
+            continue;
+        }
+        for action in actions {
+            rejected.insert(action);
+            diagnostics.push(KeybindingDiagnostic::new(
+                layer.source.clone(),
+                Some(action),
+                Some(format_gesture(gesture)),
+                KeybindingDiagnosticKind::DuplicateGesture,
+                "multiple actions in this keybinding layer use the same gesture",
+            ));
+        }
+    }
+    rejected
+}

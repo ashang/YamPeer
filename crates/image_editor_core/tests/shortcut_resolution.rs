@@ -1,6 +1,10 @@
+use std::collections::BTreeMap;
+
 use image_editor_core::{
-    AdjustmentKind, EditorCommand, KeyModifiers, NavigationDirection, RawKeyEvent, RuntimePlatform,
-    ShortcutKey, ShortcutResolver, shortcut_label,
+    AdjustmentKind, EditorCommand, EffectiveKeybindingMap, KeyModifiers, KeybindingAction,
+    KeybindingGesture, NavigationDirection, PanDirection, RawKeyEvent, RuntimePlatform,
+    ShortcutKey, ShortcutResolver, ZoomDirection, built_in_keybinding_map,
+    keybinding_action_for_command, shortcut_label,
 };
 
 fn event(key: ShortcutKey, modifiers: KeyModifiers) -> RawKeyEvent {
@@ -8,7 +12,7 @@ fn event(key: ShortcutKey, modifiers: KeyModifiers) -> RawKeyEvent {
 }
 
 #[test]
-fn platform_tables_resolve_the_same_semantic_history_and_adjustment_commands() {
+fn built_in_platform_maps_resolve_the_same_history_and_adjustment_commands() {
     let cases = [
         (
             event(ShortcutKey::Character('Z'), KeyModifiers::command()),
@@ -38,32 +42,28 @@ fn platform_tables_resolve_the_same_semantic_history_and_adjustment_commands() {
         ),
     ];
 
+    let macos = ShortcutResolver::new(built_in_keybinding_map(RuntimePlatform::MacOs));
+    let linux = ShortcutResolver::new(built_in_keybinding_map(RuntimePlatform::Linux));
     for (macos_event, linux_event, expected) in cases {
-        assert_eq!(
-            ShortcutResolver::new(RuntimePlatform::MacOs).resolve(macos_event),
-            Some(expected.clone())
-        );
-        assert_eq!(
-            ShortcutResolver::new(RuntimePlatform::Linux).resolve(linux_event),
-            Some(expected)
-        );
+        assert_eq!(macos.resolve(macos_event), Some(expected.clone()));
+        assert_eq!(linux.resolve(linux_event), Some(expected));
     }
 }
 
 #[test]
-fn navigation_edit_and_adjustment_focus_inputs_resolve_once_without_modifiers() {
-    let resolver = ShortcutResolver::new(RuntimePlatform::MacOs);
+fn effective_map_routes_edit_navigation_view_and_fullscreen_actions() {
+    let resolver = ShortcutResolver::new(built_in_keybinding_map(RuntimePlatform::Linux));
     let plain = KeyModifiers::default();
     let shifted = plain.with_shift();
     let cases = [
         (
-            event(ShortcutKey::ArrowLeft, plain),
+            event(ShortcutKey::ArrowUp, plain),
             EditorCommand::Navigate {
                 direction: NavigationDirection::Left,
             },
         ),
         (
-            event(ShortcutKey::ArrowRight, plain),
+            event(ShortcutKey::PageDown, plain),
             EditorCommand::Navigate {
                 direction: NavigationDirection::Right,
             },
@@ -79,6 +79,30 @@ fn navigation_edit_and_adjustment_focus_inputs_resolve_once_without_modifiers() 
             EditorCommand::Navigate {
                 direction: NavigationDirection::End,
             },
+        ),
+        (
+            event(ShortcutKey::Character('0'), plain),
+            EditorCommand::SetFitToWindow,
+        ),
+        (
+            event(ShortcutKey::Character('2'), plain),
+            EditorCommand::SetManualZoom { percent: 200 },
+        ),
+        (
+            event(ShortcutKey::Character('+'), plain),
+            EditorCommand::ZoomByStep {
+                direction: ZoomDirection::In,
+            },
+        ),
+        (
+            event(ShortcutKey::Character('h'), plain),
+            EditorCommand::PanCanvas {
+                direction: PanDirection::Left,
+            },
+        ),
+        (
+            event(ShortcutKey::F11, plain),
+            EditorCommand::ToggleFullscreen,
         ),
         (
             event(ShortcutKey::Character('f'), plain),
@@ -120,8 +144,32 @@ fn navigation_edit_and_adjustment_focus_inputs_resolve_once_without_modifiers() 
 }
 
 #[test]
+fn resolver_uses_the_supplied_effective_map_not_a_fixed_shortcut_table() {
+    let plain = KeyModifiers::default();
+    let mut bindings = BTreeMap::new();
+    bindings.insert(
+        KeybindingAction::ZoomIn,
+        vec![KeybindingGesture::new(ShortcutKey::Character('f'), plain)],
+    );
+    let map = EffectiveKeybindingMap::try_from_bindings(bindings).expect("unique gesture");
+    let resolver = ShortcutResolver::new(map);
+
+    assert_eq!(
+        resolver.resolve(event(ShortcutKey::Character('f'), plain)),
+        Some(EditorCommand::ZoomByStep {
+            direction: ZoomDirection::In,
+        })
+    );
+    assert_eq!(
+        resolver.resolve(event(ShortcutKey::Character('r'), plain)),
+        None,
+        "the fixed rotate binding must not survive outside the effective map"
+    );
+}
+
+#[test]
 fn release_repeat_and_text_consumed_events_are_ignored() {
-    let resolver = ShortcutResolver::new(RuntimePlatform::Linux);
+    let resolver = ShortcutResolver::new(built_in_keybinding_map(RuntimePlatform::Linux));
     let accepted = event(ShortcutKey::Character('f'), KeyModifiers::default());
     assert_eq!(
         resolver.resolve(accepted),
@@ -139,38 +187,35 @@ fn release_repeat_and_text_consumed_events_are_ignored() {
     let mut text_consumed = accepted;
     text_consumed.consumed_by_text_control = true;
     assert_eq!(resolver.resolve(text_consumed), None);
-
-    assert_eq!(
-        resolver.resolve(event(ShortcutKey::Character('z'), KeyModifiers::command())),
-        None,
-        "Linux must not treat macOS Command as Control"
-    );
 }
 
 #[test]
-fn shortcut_labels_use_runtime_correct_modifier_names() {
+fn shortcut_labels_are_derived_from_configured_gestures() {
+    let macos = built_in_keybinding_map(RuntimePlatform::MacOs);
+    let linux = built_in_keybinding_map(RuntimePlatform::Linux);
     assert_eq!(
-        shortcut_label(RuntimePlatform::MacOs, &EditorCommand::Undo),
+        shortcut_label(RuntimePlatform::MacOs, &macos, KeybindingAction::Undo),
         Some("Command+Z".to_owned())
     );
     assert_eq!(
-        shortcut_label(RuntimePlatform::Linux, &EditorCommand::Redo),
+        shortcut_label(RuntimePlatform::Linux, &linux, KeybindingAction::Redo),
         Some("Control+Shift+Z".to_owned())
     );
     assert_eq!(
-        shortcut_label(RuntimePlatform::MacOs, &EditorCommand::IncreaseAdjustment),
+        shortcut_label(
+            RuntimePlatform::MacOs,
+            &macos,
+            KeybindingAction::IncreaseAdjustment,
+        ),
         Some("Option+Up".to_owned())
     );
     assert_eq!(
-        shortcut_label(RuntimePlatform::Linux, &EditorCommand::DecreaseAdjustment),
-        Some("Alt+Down".to_owned())
+        shortcut_label(RuntimePlatform::Linux, &linux, KeybindingAction::NextImage,),
+        Some("Right / Down / PageDown / Space".to_owned())
     );
     assert_eq!(
-        shortcut_label(RuntimePlatform::Linux, &EditorCommand::FlipVertical),
-        Some("Shift+F".to_owned())
-    );
-    assert_eq!(
-        shortcut_label(RuntimePlatform::MacOs, &EditorCommand::CancelCrop),
-        None
+        keybinding_action_for_command(&EditorCommand::CancelCrop),
+        None,
+        "unconfigured commands must not present a shortcut label"
     );
 }

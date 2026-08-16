@@ -12,7 +12,7 @@ use image_editor_core::{
     AbsolutePath, ConformanceResult, CropDraft, DirectoryEntry, DirectoryEntryKind,
     DirectoryEntryLocation, EditorCommand, EditorState, Effect, FolderEnumerationInput,
     ImageFormat, KeyModifiers, PlatformCapability, RawKeyEvent, RuntimePlatform, ShortcutKey,
-    ShortcutResolver, Utf8FileName, plan_folder_enumeration, reduce,
+    ShortcutResolver, Utf8FileName, built_in_keybinding_map, plan_folder_enumeration, reduce,
 };
 
 static NEXT_FIXTURE_ID: AtomicU64 = AtomicU64::new(0);
@@ -139,7 +139,7 @@ fn dispatch_key(
     key: ShortcutKey,
     decoded_fixture: &image_editor_core::CanonicalImage,
 ) -> EditorState {
-    let command = ShortcutResolver::new(platform)
+    let command = ShortcutResolver::new(built_in_keybinding_map(platform))
         .resolve(raw_event(platform, key))
         .expect("defined conformance key resolves through the runtime table");
     let reduction = reduce(&state, command);
@@ -378,7 +378,7 @@ fn dispatch_key_with_shift(
     shift: bool,
     decoded_fixture: &image_editor_core::CanonicalImage,
 ) -> EditorState {
-    let command = ShortcutResolver::new(platform)
+    let command = ShortcutResolver::new(built_in_keybinding_map(platform))
         .resolve(raw_event_with_shift(platform, key, shift))
         .expect("generated shared editing key resolves through the runtime table");
     let reduction = reduce(&state, command);

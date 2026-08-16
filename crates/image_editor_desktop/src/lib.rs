@@ -12,6 +12,7 @@ use std::{
 
 #[cfg(feature = "native-window")]
 pub mod font_bootstrap;
+pub mod keybindings;
 
 /// The Rust toolchain recorded in every distributable package manifest.
 pub const LOCKED_RUST_TOOLCHAIN: &str = "1.85.0";

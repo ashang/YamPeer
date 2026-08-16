@@ -22,10 +22,11 @@ use image_editor_codecs::{
 use image_editor_core::{
     AbsolutePath, AdjustmentKind, ApplicationError, Availability, CapabilitySnapshot, CropDraft,
     DirectoryEntry, DirectoryEntryKind, DirectoryEntryLocation, EditorCommand, EditorState, Effect,
-    ErrorCategory, FolderEnumerationInput, ImageFormat, InteractionMode, KeyModifiers,
-    NoticeSeverity, NoticeSubject, PreviewState, RawKeyEvent, Revision, RuntimePlatform, SafeError,
-    ShortcutKey, Utf8FileName, VisibleNotice, plan_folder_enumeration, reduce,
-    render_current_editing_result, resolve_shortcut, shortcut_label,
+    EffectiveKeybindingMap, ErrorCategory, FolderEnumerationInput, ImageFormat, InteractionMode,
+    KeyModifiers, NoticeSeverity, NoticeSubject, PreviewState, RawKeyEvent, Revision,
+    RuntimePlatform, SafeError, ShortcutKey, Utf8FileName, VisibleNotice,
+    keybinding_action_for_command, plan_folder_enumeration, reduce, render_current_editing_result,
+    resolve_shortcut, shortcut_label,
 };
 use image_editor_platform::PlatformDialogs;
 #[cfg(any(feature = "macos-dialogs", feature = "xdg-portal", feature = "gtk"))]
@@ -160,6 +161,7 @@ impl eframe::App for StartupAvailabilityErrorApp {
 pub struct DesktopApp {
     dialogs: UiDialogs,
     registry: Arc<CodecRegistry>,
+    keybindings: EffectiveKeybindingMap,
     state: EditorState,
     workers: WorkerExecutor,
     completions: Receiver<EditorCommand>,
@@ -180,6 +182,9 @@ impl DesktopApp {
             dialogs.folder_picker_available(),
             dialogs.save_picker_available(),
         )));
+        let keybindings =
+            crate::keybindings::resolve_current_startup_keybindings(Self::runtime_platform(), None)
+                .effective_map;
         let state = EditorState::new(registry.snapshot().clone());
         let (completion_sender, completions) = mpsc::channel();
         let workers = WorkerExecutor::new(Arc::clone(&registry), completion_sender);
@@ -187,6 +192,7 @@ impl DesktopApp {
         Self {
             dialogs,
             registry,
+            keybindings,
             state,
             workers,
             completions,
@@ -339,7 +345,7 @@ impl DesktopApp {
                 .events
                 .iter()
                 .filter_map(|event| raw_key_event(platform, event, consumed_by_text_control))
-                .filter_map(|event| resolve_shortcut(platform, event))
+                .filter_map(|event| resolve_shortcut(&self.keybindings, event))
                 .collect::<Vec<_>>()
         });
         for command in commands {
@@ -368,7 +374,7 @@ impl DesktopApp {
         enabled: bool,
         disabled_reason: &str,
     ) {
-        let title = command_title(Self::runtime_platform(), label, &command);
+        let title = command_title(Self::runtime_platform(), &self.keybindings, label, &command);
         let response = ui.add_enabled(enabled, egui::Button::new(title));
         if !enabled {
             response.on_disabled_hover_text(disabled_reason);
@@ -742,9 +748,23 @@ fn raw_key_event(
         egui::Key::ArrowDown => ShortcutKey::ArrowDown,
         egui::Key::ArrowLeft => ShortcutKey::ArrowLeft,
         egui::Key::ArrowRight => ShortcutKey::ArrowRight,
+        egui::Key::PageUp => ShortcutKey::PageUp,
+        egui::Key::PageDown => ShortcutKey::PageDown,
         egui::Key::Home => ShortcutKey::Home,
         egui::Key::End => ShortcutKey::End,
         egui::Key::Enter => ShortcutKey::Enter,
+        egui::Key::Space => ShortcutKey::Space,
+        egui::Key::F11 => ShortcutKey::F11,
+        egui::Key::Num0 => ShortcutKey::Character('0'),
+        egui::Key::Num1 => ShortcutKey::Character('1'),
+        egui::Key::Num2 => ShortcutKey::Character('2'),
+        egui::Key::Plus => ShortcutKey::Character('+'),
+        egui::Key::Equals => ShortcutKey::Character('='),
+        egui::Key::Minus => ShortcutKey::Character('-'),
+        egui::Key::H => ShortcutKey::Character('h'),
+        egui::Key::J => ShortcutKey::Character('j'),
+        egui::Key::K => ShortcutKey::Character('k'),
+        egui::Key::L => ShortcutKey::Character('l'),
         egui::Key::B => ShortcutKey::Character('b'),
         egui::Key::C => ShortcutKey::Character('c'),
         egui::Key::D => ShortcutKey::Character('d'),
@@ -769,8 +789,14 @@ fn raw_key_event(
     })
 }
 
-fn command_title(platform: RuntimePlatform, label: &str, command: &EditorCommand) -> String {
-    shortcut_label(platform, command)
+fn command_title(
+    platform: RuntimePlatform,
+    keybindings: &EffectiveKeybindingMap,
+    label: &str,
+    command: &EditorCommand,
+) -> String {
+    keybinding_action_for_command(command)
+        .and_then(|action| shortcut_label(platform, keybindings, action))
         .map(|shortcut| format!("{label} ({shortcut})"))
         .unwrap_or_else(|| label.to_owned())
 }
@@ -1487,8 +1513,11 @@ mod desktop_workspace_tests {
         };
         let raw = raw_key_event(RuntimePlatform::Linux, &event, false)
             .expect("defined shortcut becomes a raw key event");
-        let command = image_editor_core::resolve_shortcut(RuntimePlatform::Linux, raw)
-            .expect("accepted F press resolves to a command");
+        let command = image_editor_core::resolve_shortcut(
+            &image_editor_core::built_in_keybinding_map(RuntimePlatform::Linux),
+            raw,
+        )
+        .expect("accepted F press resolves to a command");
         assert_eq!(command, EditorCommand::FlipHorizontal);
 
         let state = active_state(capabilities());
@@ -1569,25 +1598,37 @@ mod desktop_workspace_tests {
         assert_eq!(
             command_title(
                 RuntimePlatform::MacOs,
+                &image_editor_core::built_in_keybinding_map(RuntimePlatform::MacOs),
                 "增加调整",
                 &EditorCommand::IncreaseAdjustment,
             ),
             "增加调整 (Option+Up)"
         );
         assert_eq!(
-            command_title(RuntimePlatform::MacOs, "撤销", &EditorCommand::Undo,),
+            command_title(
+                RuntimePlatform::MacOs,
+                &image_editor_core::built_in_keybinding_map(RuntimePlatform::MacOs),
+                "撤销",
+                &EditorCommand::Undo,
+            ),
             "撤销 (Command+Z)"
         );
         assert_eq!(
             command_title(
                 RuntimePlatform::Linux,
+                &image_editor_core::built_in_keybinding_map(RuntimePlatform::Linux),
                 "增加调整",
                 &EditorCommand::IncreaseAdjustment,
             ),
             "增加调整 (Alt+Up)"
         );
         assert_eq!(
-            command_title(RuntimePlatform::Linux, "撤销", &EditorCommand::Undo),
+            command_title(
+                RuntimePlatform::Linux,
+                &image_editor_core::built_in_keybinding_map(RuntimePlatform::Linux),
+                "撤销",
+                &EditorCommand::Undo,
+            ),
             "撤销 (Control+Z)"
         );
     }
@@ -1643,6 +1684,7 @@ mod chinese_text_visual_regression_tests {
                 CHINESE_AVAILABILITY_NOTICE,
             ),
         );
+        let keybindings = image_editor_core::built_in_keybinding_map(platform);
         let output = context.run(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
@@ -1660,10 +1702,16 @@ mod chinese_text_visual_regression_tests {
                     render_notice(ui, &availability);
                     ui.label(command_title(
                         platform,
+                        &keybindings,
                         "增加调整",
                         &EditorCommand::IncreaseAdjustment,
                     ));
-                    ui.label(command_title(platform, "撤销", &EditorCommand::Undo));
+                    ui.label(command_title(
+                        platform,
+                        &keybindings,
+                        "撤销",
+                        &EditorCommand::Undo,
+                    ));
                 });
             },
         );

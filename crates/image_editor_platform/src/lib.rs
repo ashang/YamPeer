@@ -510,3 +510,150 @@ mod tests {
         fs::remove_file(existing_path).unwrap();
     }
 }
+
+/// Environment paths used to derive the current platform's user keybinding
+/// location. Supplying these explicitly keeps discovery deterministic in tests.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KeybindingPathEnvironment {
+    pub home_directory: AbsolutePath,
+    pub xdg_config_home: Option<AbsolutePath>,
+}
+
+impl KeybindingPathEnvironment {
+    pub const fn new(home_directory: AbsolutePath, xdg_config_home: Option<AbsolutePath>) -> Self {
+        Self {
+            home_directory,
+            xdg_config_home,
+        }
+    }
+}
+
+/// Discovers all supported keybinding sources in descending priority order.
+///
+/// The built-in layer is always present. Project and user paths are merely
+/// candidates here: the reader reports their ordinary absence separately from
+/// an actual read failure.
+pub fn discover_keybinding_sources(
+    platform: image_editor_core::RuntimePlatform,
+    explicit_cli: Option<AbsolutePath>,
+    project_root: AbsolutePath,
+    environment: &KeybindingPathEnvironment,
+) -> Vec<image_editor_core::KeybindingSource> {
+    let mut sources = Vec::with_capacity(4);
+    if let Some(path) = explicit_cli {
+        sources.push(image_editor_core::KeybindingSource::ExplicitCli(path));
+    }
+    sources.push(image_editor_core::KeybindingSource::Project(child_path(
+        &project_root,
+        ".yampixr/keybindings.toml",
+    )));
+
+    let user_root = match platform {
+        image_editor_core::RuntimePlatform::MacOs => {
+            child_path(&environment.home_directory, "Library/Application Support")
+        }
+        image_editor_core::RuntimePlatform::Linux => environment
+            .xdg_config_home
+            .clone()
+            .unwrap_or_else(|| child_path(&environment.home_directory, ".config")),
+    };
+    sources.push(image_editor_core::KeybindingSource::User(child_path(
+        &user_root,
+        "yampixr/keybindings.toml",
+    )));
+    sources.push(image_editor_core::KeybindingSource::BuiltIn);
+    sources
+}
+
+/// Discovers keybinding paths using the current process working directory and
+/// home/XDG environment. Callers that need deterministic behavior should use
+/// [`discover_keybinding_sources`] with an explicit environment instead.
+pub fn discover_current_keybinding_sources(
+    platform: image_editor_core::RuntimePlatform,
+    explicit_cli: Option<AbsolutePath>,
+) -> io::Result<Vec<image_editor_core::KeybindingSource>> {
+    let project_root = absolute_path_from_filesystem(std::env::current_dir()?)?;
+    let home_directory = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HOME is unavailable"))?;
+    let xdg_config_home = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
+    let environment = KeybindingPathEnvironment::new(
+        absolute_path_from_filesystem(home_directory)?,
+        xdg_config_home
+            .map(absolute_path_from_filesystem)
+            .transpose()?,
+    );
+    Ok(discover_keybinding_sources(
+        platform,
+        explicit_cli,
+        project_root,
+        &environment,
+    ))
+}
+
+fn child_path(parent: &AbsolutePath, child: &str) -> AbsolutePath {
+    let path = Path::new(parent.as_str()).join(child);
+    AbsolutePath::new(
+        path.to_str()
+            .expect("a UTF-8 parent and ASCII child always form a UTF-8 path")
+            .to_owned(),
+    )
+    .expect("a child of an absolute path remains absolute")
+}
+
+fn absolute_path_from_filesystem(path: PathBuf) -> io::Result<AbsolutePath> {
+    let path = path.into_os_string().into_string().map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "keybinding configuration path is not UTF-8",
+        )
+    })?;
+    AbsolutePath::new(path)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error.to_string()))
+}
+
+/// The result of reading one configured keybinding source.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum KeybindingSourceRead {
+    /// An optional project or user file does not exist.
+    Absent,
+    /// The complete TOML document from a readable source.
+    Contents(String),
+    /// The named source exists or was explicitly requested but cannot be read.
+    Unreadable,
+}
+
+/// Reads configuration content without exposing OS error text to UI diagnostics.
+pub trait KeybindingSourceReader {
+    fn read(&self, source: &image_editor_core::KeybindingSource) -> KeybindingSourceRead;
+}
+
+/// The local filesystem reader used by the desktop process.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LocalKeybindingSourceReader;
+
+impl KeybindingSourceReader for LocalKeybindingSourceReader {
+    fn read(&self, source: &image_editor_core::KeybindingSource) -> KeybindingSourceRead {
+        let path = match source {
+            image_editor_core::KeybindingSource::ExplicitCli(path)
+            | image_editor_core::KeybindingSource::Project(path)
+            | image_editor_core::KeybindingSource::User(path) => path,
+            image_editor_core::KeybindingSource::BuiltIn => return KeybindingSourceRead::Absent,
+        };
+
+        match fs::read_to_string(Path::new(path.as_str())) {
+            Ok(contents) => KeybindingSourceRead::Contents(contents),
+            Err(error)
+                if error.kind() == io::ErrorKind::NotFound
+                    && matches!(
+                        source,
+                        image_editor_core::KeybindingSource::Project(_)
+                            | image_editor_core::KeybindingSource::User(_)
+                    ) =>
+            {
+                KeybindingSourceRead::Absent
+            }
+            Err(_) => KeybindingSourceRead::Unreadable,
+        }
+    }
+}

@@ -1,6 +1,6 @@
 use image_editor_core::{
     AdjustmentKind, EditorCommand, KeyModifiers, NavigationDirection, RawKeyEvent, RuntimePlatform,
-    ShortcutKey, ShortcutResolver,
+    ShortcutKey, ShortcutResolver, built_in_keybinding_map,
 };
 use proptest::prelude::*;
 
@@ -162,9 +162,9 @@ proptest! {
     ) {
         let expected = (variant == 0).then(|| expected_command(intent));
         let (macos_event, linux_event) = events_for_intent(intent, uppercase_character);
-        let macos_result = ShortcutResolver::new(RuntimePlatform::MacOs)
+        let macos_result = ShortcutResolver::new(built_in_keybinding_map(RuntimePlatform::MacOs))
             .resolve(apply_event_variant(macos_event, variant));
-        let linux_result = ShortcutResolver::new(RuntimePlatform::Linux)
+        let linux_result = ShortcutResolver::new(built_in_keybinding_map(RuntimePlatform::Linux))
             .resolve(apply_event_variant(linux_event, variant));
 
         prop_assert_eq!(macos_result, expected.clone());

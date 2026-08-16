@@ -129,6 +129,85 @@ fn parser_rejects_invalid_toml_without_exposing_document_contents() {
 }
 
 #[test]
+fn layered_resolution_rejects_same_layer_duplicates_and_retains_non_conflicting_fallbacks() {
+    use std::collections::BTreeMap;
+
+    use image_editor_core::{
+        KeyModifiers, KeybindingGesture, KeybindingLayerInput, ShortcutKey,
+        ValidatedKeybindingConfiguration, resolve_keybindings,
+    };
+
+    let duplicate = KeybindingGesture::new(ShortcutKey::Character('h'), KeyModifiers::default());
+    let next = KeybindingGesture::new(ShortcutKey::Character('n'), KeyModifiers::default());
+    let zoom = KeybindingGesture::new(ShortcutKey::Character('z'), KeyModifiers::default());
+    let mut cli_bindings = BTreeMap::new();
+    cli_bindings.insert(KeybindingAction::PanLeft, vec![duplicate]);
+    cli_bindings.insert(KeybindingAction::PanRight, vec![duplicate]);
+    cli_bindings.insert(KeybindingAction::NextImage, vec![next]);
+    let cli = KeybindingLayerInput::from_parse_result(
+        KeybindingSource::ExplicitCli(
+            image_editor_core::AbsolutePath::new("/config/cli.toml").unwrap(),
+        ),
+        image_editor_core::KeybindingParseResult {
+            configuration: Some(ValidatedKeybindingConfiguration::new(
+                cli_bindings,
+                BTreeMap::new(),
+                BTreeMap::new(),
+            )),
+            diagnostics: Vec::new(),
+        },
+    );
+
+    let mut project_bindings = BTreeMap::new();
+    project_bindings.insert(KeybindingAction::FitToWindow, vec![next, zoom]);
+    let project = KeybindingLayerInput::from_parse_result(
+        KeybindingSource::Project(
+            image_editor_core::AbsolutePath::new("/project/.yampixr/keybindings.toml").unwrap(),
+        ),
+        image_editor_core::KeybindingParseResult {
+            configuration: Some(ValidatedKeybindingConfiguration::new(
+                project_bindings,
+                BTreeMap::new(),
+                BTreeMap::new(),
+            )),
+            diagnostics: Vec::new(),
+        },
+    );
+
+    let resolution = resolve_keybindings(RuntimePlatform::Linux, &[cli, project]);
+    assert_eq!(
+        resolution.effective_map.action_for(next),
+        Some(KeybindingAction::NextImage)
+    );
+    assert_eq!(
+        resolution.effective_map.action_for(zoom),
+        Some(KeybindingAction::FitToWindow),
+        "a lower layer retains its non-conflicting gesture"
+    );
+    assert!(
+        resolution
+            .effective_map
+            .gestures_for(KeybindingAction::PanLeft)
+            .is_empty()
+    );
+    assert!(
+        resolution
+            .effective_map
+            .gestures_for(KeybindingAction::PanRight)
+            .is_empty()
+    );
+    assert!(resolution.diagnostics.iter().any(|diagnostic| {
+        diagnostic.category == KeybindingDiagnosticKind::DuplicateGesture
+            && diagnostic.action == Some(KeybindingAction::PanLeft)
+    }));
+    assert!(resolution.diagnostics.iter().any(|diagnostic| {
+        diagnostic.category == KeybindingDiagnosticKind::BlockedByHigherPriority
+            && diagnostic.action == Some(KeybindingAction::FitToWindow)
+            && diagnostic.gesture.as_deref() == Some("N")
+    }));
+}
+
+#[test]
 fn platform_specific_tables_can_supply_their_platform_modifier_sets() {
     let parsed = parse_keybinding_configuration(
         r#"

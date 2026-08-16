@@ -227,3 +227,76 @@ fn native_dialog_interaction_is_explicitly_gated() {
         "set IMAGE_EDITOR_RUN_NATIVE_DIALOG_TESTS=1 only on an interactive hosted runner"
     );
 }
+
+#[test]
+fn keybinding_source_discovery_uses_priority_and_platform_user_paths() {
+    use image_editor_core::{KeybindingSource, RuntimePlatform};
+    use image_editor_platform::{KeybindingPathEnvironment, discover_keybinding_sources};
+
+    let environment = KeybindingPathEnvironment::new(
+        absolute_path(std::path::Path::new("/home/editor")),
+        Some(absolute_path(std::path::Path::new("/xdg-config"))),
+    );
+    let cli = absolute_path(std::path::Path::new("/explicit/keybindings.toml"));
+    let project = absolute_path(std::path::Path::new("/workspace"));
+
+    let linux = discover_keybinding_sources(
+        RuntimePlatform::Linux,
+        Some(cli.clone()),
+        project.clone(),
+        &environment,
+    );
+    assert_eq!(
+        linux,
+        vec![
+            KeybindingSource::ExplicitCli(cli),
+            KeybindingSource::Project(absolute_path(std::path::Path::new(
+                "/workspace/.yampixr/keybindings.toml",
+            ))),
+            KeybindingSource::User(absolute_path(std::path::Path::new(
+                "/xdg-config/yampixr/keybindings.toml",
+            ))),
+            KeybindingSource::BuiltIn,
+        ]
+    );
+
+    let macos = discover_keybinding_sources(RuntimePlatform::MacOs, None, project, &environment);
+    assert!(matches!(macos.first(), Some(KeybindingSource::Project(_))));
+    assert_eq!(
+        macos[1],
+        KeybindingSource::User(absolute_path(std::path::Path::new(
+            "/home/editor/Library/Application Support/yampixr/keybindings.toml",
+        )))
+    );
+    assert!(matches!(macos.last(), Some(KeybindingSource::BuiltIn)));
+}
+
+#[test]
+fn local_keybinding_reader_distinguishes_optional_absence_from_unreadable_sources() {
+    use image_editor_core::KeybindingSource;
+    use image_editor_platform::{
+        KeybindingSourceRead, KeybindingSourceReader, LocalKeybindingSourceReader,
+    };
+
+    let root = absolute_temporary_path("keybinding-reader");
+    let missing = root.join("missing.toml");
+    let directory = root.join("unreadable.toml");
+    fs::create_dir_all(&directory).unwrap();
+    let reader = LocalKeybindingSourceReader;
+
+    assert_eq!(
+        reader.read(&KeybindingSource::Project(absolute_path(&missing))),
+        KeybindingSourceRead::Absent
+    );
+    assert_eq!(
+        reader.read(&KeybindingSource::ExplicitCli(absolute_path(&missing))),
+        KeybindingSourceRead::Unreadable,
+        "an explicit CLI source is not optional when it is missing"
+    );
+    assert_eq!(
+        reader.read(&KeybindingSource::User(absolute_path(&directory))),
+        KeybindingSourceRead::Unreadable
+    );
+
+    fs::remove_dir_all(root).unwrap();
+}

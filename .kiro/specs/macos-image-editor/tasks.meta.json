@@ -985,6 +985,16 @@
         "executionId": "06bf19ed-6430-49c3-a406-8b05e5c7fe54",
         "chatSessionId": "sess_76b655fd-4e3a-46f4-a97a-b57304e105e1",
         "timestamp": 1786875455774
+      },
+      {
+        "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
+        "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
+        "timestamp": 1786877966993
+      },
+      {
+        "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
+        "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
+        "timestamp": 1786878308888
       }
     ],
     "12.6 Replace fixed shortcut tables with effective-map routing": [
@@ -992,6 +1002,11 @@
         "executionId": "06bf19ed-6430-49c3-a406-8b05e5c7fe54",
         "chatSessionId": "sess_76b655fd-4e3a-46f4-a97a-b57304e105e1",
         "timestamp": 1786875455922
+      },
+      {
+        "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
+        "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
+        "timestamp": 1786878509174
       }
     ],
     "12.8 Wire keyboard image viewing and navigation aliases into the reducer": [
@@ -1025,6 +1040,11 @@
         "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
         "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
         "timestamp": 1786877792803
+      },
+      {
+        "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
+        "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
+        "timestamp": 1786877957468
       }
     ],
     "12.5 Write property test for layer precedence and partial fallback": [
@@ -1032,6 +1052,16 @@
         "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
         "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
         "timestamp": 1786877779859
+      },
+      {
+        "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
+        "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
+        "timestamp": 1786878319847
+      },
+      {
+        "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
+        "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
+        "timestamp": 1786878496314
       }
     ],
     "12.7 Write property test for exclusive, text-safe effective bindings": [
