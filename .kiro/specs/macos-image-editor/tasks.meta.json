@@ -853,6 +853,58 @@
         "chatSessionId": "sess_7d66f558-b81b-4da0-b1c1-46a65cce26db",
         "timestamp": 1786864821662
       }
+    ],
+    "10.1 Add the license-compatible bundled font resource and package metadata": [
+      {
+        "executionId": "b9dec0ea-8b8e-46ec-aafc-4ff14f14360c",
+        "chatSessionId": "sess_cbbd3837-d6b7-4f75-9294-43e11ffc7d3e",
+        "timestamp": 1786865508269
+      },
+      {
+        "executionId": "b9dec0ea-8b8e-46ec-aafc-4ff14f14360c",
+        "chatSessionId": "sess_cbbd3837-d6b7-4f75-9294-43e11ffc7d3e",
+        "timestamp": 1786865519414
+      }
+    ],
+    "10.2 Implement pre-workspace font bootstrap and safe failure handling": [
+      {
+        "executionId": "b9dec0ea-8b8e-46ec-aafc-4ff14f14360c",
+        "chatSessionId": "sess_cbbd3837-d6b7-4f75-9294-43e11ffc7d3e",
+        "timestamp": 1786865508332
+      },
+      {
+        "executionId": "b9dec0ea-8b8e-46ec-aafc-4ff14f14360c",
+        "chatSessionId": "sess_cbbd3837-d6b7-4f75-9294-43e11ffc7d3e",
+        "timestamp": 1786866149063
+      }
+    ],
+    "10.3 Add font configuration unit tests": [
+      {
+        "executionId": "b9dec0ea-8b8e-46ec-aafc-4ff14f14360c",
+        "chatSessionId": "sess_cbbd3837-d6b7-4f75-9294-43e11ffc7d3e",
+        "timestamp": 1786865508410
+      }
+    ],
+    "10.4 Add headless and visual-regression coverage for Chinese text": [
+      {
+        "executionId": "b9dec0ea-8b8e-46ec-aafc-4ff14f14360c",
+        "chatSessionId": "sess_cbbd3837-d6b7-4f75-9294-43e11ffc7d3e",
+        "timestamp": 1786865508443
+      }
+    ],
+    "10.5 Add macOS/Linux package font smoke checks": [
+      {
+        "executionId": "b9dec0ea-8b8e-46ec-aafc-4ff14f14360c",
+        "chatSessionId": "sess_cbbd3837-d6b7-4f75-9294-43e11ffc7d3e",
+        "timestamp": 1786865508475
+      }
+    ],
+    "11. Final checkpoint - Ensure all tests pass": [
+      {
+        "executionId": "b9dec0ea-8b8e-46ec-aafc-4ff14f14360c",
+        "chatSessionId": "sess_cbbd3837-d6b7-4f75-9294-43e11ffc7d3e",
+        "timestamp": 1786865508509
+      }
     ]
   }
 }

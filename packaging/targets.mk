@@ -9,7 +9,7 @@ LINUX_PACKAGE_FEATURES := $(COMMON_PACKAGE_FEATURES),xdg-portal
 
 .PHONY: package-macos package-linux
 
-# Produces the macOS binary and the capability manifest shipped beside its package artifact.
+# Produces the macOS binary, stages its mandatory bundled font, and emits capability, package, license, and SBOM metadata.
 package-macos:
 	$(CARGO) build --locked --release --target aarch64-apple-darwin --package image_editor_desktop --no-default-features --features $(MACOS_PACKAGE_FEATURES)
 	$(CARGO) run --locked --package image_editor_desktop --no-default-features --features $(MACOS_PACKAGE_FEATURES) --bin generate-capabilities -- --profile macos-aarch64 --output $(DIST_DIR)/macos-aarch64/capabilities.json

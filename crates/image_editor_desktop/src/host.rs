@@ -118,8 +118,38 @@ pub fn run() -> eframe::Result {
     eframe::run_native(
         "Image Editor",
         native_options,
-        Box::new(|_| Ok(Box::new(DesktopApp::new()))),
+        Box::new(|creation_context| {
+            // This is the first creation-callback operation. Do not construct
+            // the editable workspace until the packaged font is readable,
+            // parseable, and registered on the eframe-provided context.
+            let application: Box<dyn eframe::App> =
+                match image_editor_desktop::font_bootstrap::FontBootstrapper::for_current_package()
+                    .and_then(|bootstrapper| bootstrapper.install(&creation_context.egui_ctx))
+                {
+                    Ok(()) => Box::new(DesktopApp::new()),
+                    Err(failure) => Box::new(StartupAvailabilityErrorApp { failure }),
+                };
+            Ok(application)
+        }),
     )
+}
+
+/// A deliberately non-editable, ASCII-only safe error state.
+///
+/// It accepts no editor commands and renders no Required_Text, so a missing or
+/// rejected CJK font can never degrade into missing-glyph boxes in the normal
+/// workspace.
+struct StartupAvailabilityErrorApp {
+    failure: image_editor_desktop::font_bootstrap::FontBootstrapFailure,
+}
+
+impl eframe::App for StartupAvailabilityErrorApp {
+    fn update(&mut self, context: &egui::Context, _: &mut eframe::Frame) {
+        egui::CentralPanel::default().show(context, |ui| {
+            ui.heading("Startup Availability Error");
+            ui.label(self.failure.safe_message());
+        });
+    }
 }
 
 /// The stateful native application adapter. All methods are UI-thread confined.

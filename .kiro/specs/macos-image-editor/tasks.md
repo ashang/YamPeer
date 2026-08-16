@@ -168,29 +168,29 @@ Implement the application as a Rust workspace with a platform-independent `image
     - Ensure all implemented code paths are reachable from the primary window and all optional feature combinations compile.
     - _Requirements: 1.1-11.5_
 
-- [ ] 10. Bundle and register the required Chinese-capable UI font
-  - [ ] 10.1 Add the license-compatible bundled font resource and package metadata
+- [~] 10. Bundle and register the required Chinese-capable UI font
+  - [-] 10.1 Add the license-compatible bundled font resource and package metadata
     - Add the approved Noto Sans CJK SC OFL-1.1 resource, or an approved equivalent with identical Required_Text coverage, to the macOS and Linux application resource paths.
     - Record the resource path, font name/version, checksum, and license in package metadata, `capabilities.json`, release-license output, and the SBOM; do not make user-installed system fonts a fallback requirement.
     - _Requirements: 11.6_
-  - [ ] 10.2 Implement pre-workspace font bootstrap and safe failure handling
-    - Add `FontBootstrapper` to resolve and validate the packaged resource before the normal workspace can draw, then register the resulting `egui::FontDefinitions` as the first proportional and monospace family choice and as a fallback before the first workspace frame.
+  - [-] 10.2 Implement pre-workspace font bootstrap and safe failure handling
+    - Add `FontBootstrapper` to resolve and validate the packaged resource and register the resulting `egui::FontDefinitions` as the first proportional and monospace family choice and as a fallback before the normal Primary_Main_Window is created; if eframe exposes the context only in `CreationContext`, make registration the first callback operation and prevent workspace construction/drawing unless it succeeds.
     - On unreadable, malformed, or unregistrable font data, surface a native-safe Startup_Availability_Error, prevent browsing/editing commands, and exit nonzero or remain in a non-editable error state instead of silently displaying missing-glyph boxes.
     - _Requirements: 8.7-8.9, 11.7_
-  - [ ] 10.3 Add font configuration unit tests
+  - [~] 10.3 Add font configuration unit tests
     - Test the packaged-font resolver, required simplified-Chinese/Latin/symbol glyph coverage, `egui::FontDefinitions` priority/fallback family construction, and injected read/parse/registration failures.
     - Assert that every failure takes the Startup_Availability_Error path and never produces an interactive editor state.
     - _Requirements: 8.7-8.9, 11.6-11.7_
-  - [ ] 10.4 Add headless and visual-regression coverage for Chinese text
+  - [~] 10.4 Add headless and visual-regression coverage for Chinese text
     - Render a representative Chinese UI label, a Chinese filename, and a Chinese availability/error notice on the deterministic desktop test surface; compare against approved snapshots or glyph-rendering assertions that reject missing-glyph boxes.
     - Run the coverage with the macOS and Linux shortcut-label variants so the bundled face remains active across platform-specific UI text.
     - _Requirements: 8.2, 8.5-8.9_
-  - [ ] 10.5 Add macOS/Linux package font smoke checks
+  - [~] 10.5 Add macOS/Linux package font smoke checks
     - Verify each target package contains the declared font resource and license metadata, can read and register the resource during startup, and reaches its normal one-window startup path when the resource is present.
     - Verify a package fixture with the font resource unavailable reports Startup_Availability_Error rather than opening a normal workspace with missing-glyph boxes.
     - _Requirements: 8.4, 8.7-8.9, 11.6-11.7_
 
-- [ ] 11. Final checkpoint - Ensure all tests pass
+- [~] 11. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
   - The existing recorded completion of task 9.5 and the prior final checkpoint is not evidence of a clean quality gate: Property 6 is known to be failing and must be repaired and rerun, together with tasks 10.1-10.5, before this checkpoint can be completed.
 
