@@ -79,7 +79,7 @@ Implement the application as a Rust workspace with a platform-independent `image
     - Generate valid and invalid untrusted bounds to verify exact half-open copied pixels, retained crop state on failure, and cancellation behavior.
     - **Validates: Requirements 4.3-4.7.**
 
-- [ ] 5. Implement adjustment, history, and cross-platform shortcut behavior
+- [x] 5. Implement adjustment, history, and cross-platform shortcut behavior
   - [x] 5.1 Implement brightness and contrast draft interaction and deterministic arithmetic
     - Add focus, one-step clamped increase/decrease, preview application order, and `Return` commit behavior including zero-value operations and focused-draft reset.
     - Use specified fixed-point rounding/clamping while leaving alpha unchanged and preserving preview/state for no-active commands.
@@ -148,7 +148,7 @@ Implement the application as a Rust workspace with a platform-independent `image
     - Verify one-window startup, complete control visibility with an active image, complete filename display, one reducer command per accepted key press, source-pixel crop overlay conversion, disabled-capability notices, and platform-specific shortcut labels.
     - _Requirements: 4.3-4.4, 8.1-8.6, 9.3-9.7, 11.2_
 
-- [ ] 9. Wire cross-platform conformance and distributable capability metadata
+- [x] 9. Wire cross-platform conformance and distributable capability metadata
   - [x] 9.1 Implement conformance fixtures, deterministic result serialization, and cross-platform pipeline harness
     - Add fixed lossless PNG fixtures and execute shared operation/draft sequences through both runtime command tables; serialize normalized dimensions, crop state, and RGBA16 samples for comparison.
     - _Requirements: 7.7, 10.1-10.5_
@@ -163,7 +163,7 @@ Implement the application as a Rust workspace with a platform-independent `image
   - [x] 9.4 Write packaging smoke and cross-platform integration tests
     - On macOS and Linux CI runners, verify package startup opens one window with optional HEIC/dialog dependencies both present and absent, and compare conformance artifacts plus PNG/TIFF export-reopen results.
     - _Requirements: 8.4, 10.1, 10.2, 10.5, 11.1-11.5_
-  - [-] 9.5 Wire the final application composition and CI quality gates
+  - [x] 9.5 Wire the final application composition and CI quality gates
     - Connect workspace crates into the shipping binary and add deterministic commands for formatting, clippy, core tests, property tests with at least 100 cases/property, target builds, and hosted integration suites.
     - Ensure all implemented code paths are reachable from the primary window and all optional feature combinations compile.
     - _Requirements: 1.1-11.5_
