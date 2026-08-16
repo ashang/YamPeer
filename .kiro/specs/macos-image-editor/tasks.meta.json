@@ -876,6 +876,11 @@
         "executionId": "b9dec0ea-8b8e-46ec-aafc-4ff14f14360c",
         "chatSessionId": "sess_cbbd3837-d6b7-4f75-9294-43e11ffc7d3e",
         "timestamp": 1786866149063
+      },
+      {
+        "executionId": "b9dec0ea-8b8e-46ec-aafc-4ff14f14360c",
+        "chatSessionId": "sess_cbbd3837-d6b7-4f75-9294-43e11ffc7d3e",
+        "timestamp": 1786866410745
       }
     ],
     "10.3 Add font configuration unit tests": [
@@ -883,6 +888,16 @@
         "executionId": "b9dec0ea-8b8e-46ec-aafc-4ff14f14360c",
         "chatSessionId": "sess_cbbd3837-d6b7-4f75-9294-43e11ffc7d3e",
         "timestamp": 1786865508410
+      },
+      {
+        "executionId": "b9dec0ea-8b8e-46ec-aafc-4ff14f14360c",
+        "chatSessionId": "sess_cbbd3837-d6b7-4f75-9294-43e11ffc7d3e",
+        "timestamp": 1786866420661
+      },
+      {
+        "executionId": "b9dec0ea-8b8e-46ec-aafc-4ff14f14360c",
+        "chatSessionId": "sess_cbbd3837-d6b7-4f75-9294-43e11ffc7d3e",
+        "timestamp": 1786866712162
       }
     ],
     "10.4 Add headless and visual-regression coverage for Chinese text": [
@@ -890,6 +905,16 @@
         "executionId": "b9dec0ea-8b8e-46ec-aafc-4ff14f14360c",
         "chatSessionId": "sess_cbbd3837-d6b7-4f75-9294-43e11ffc7d3e",
         "timestamp": 1786865508443
+      },
+      {
+        "executionId": "b9dec0ea-8b8e-46ec-aafc-4ff14f14360c",
+        "chatSessionId": "sess_cbbd3837-d6b7-4f75-9294-43e11ffc7d3e",
+        "timestamp": 1786866726384
+      },
+      {
+        "executionId": "b9dec0ea-8b8e-46ec-aafc-4ff14f14360c",
+        "chatSessionId": "sess_cbbd3837-d6b7-4f75-9294-43e11ffc7d3e",
+        "timestamp": 1786867346499
       }
     ],
     "10.5 Add macOS/Linux package font smoke checks": [
@@ -897,6 +922,16 @@
         "executionId": "b9dec0ea-8b8e-46ec-aafc-4ff14f14360c",
         "chatSessionId": "sess_cbbd3837-d6b7-4f75-9294-43e11ffc7d3e",
         "timestamp": 1786865508475
+      },
+      {
+        "executionId": "b9dec0ea-8b8e-46ec-aafc-4ff14f14360c",
+        "chatSessionId": "sess_cbbd3837-d6b7-4f75-9294-43e11ffc7d3e",
+        "timestamp": 1786867364049
+      },
+      {
+        "executionId": "b9dec0ea-8b8e-46ec-aafc-4ff14f14360c",
+        "chatSessionId": "sess_cbbd3837-d6b7-4f75-9294-43e11ffc7d3e",
+        "timestamp": 1786867507881
       }
     ],
     "11. Final checkpoint - Ensure all tests pass": [
@@ -904,6 +939,120 @@
         "executionId": "b9dec0ea-8b8e-46ec-aafc-4ff14f14360c",
         "chatSessionId": "sess_cbbd3837-d6b7-4f75-9294-43e11ffc7d3e",
         "timestamp": 1786865508509
+      },
+      {
+        "executionId": "b9dec0ea-8b8e-46ec-aafc-4ff14f14360c",
+        "chatSessionId": "sess_cbbd3837-d6b7-4f75-9294-43e11ffc7d3e",
+        "timestamp": 1786867521059
+      }
+    ],
+    "12.1 Extend core action, gesture, and view-state contracts": [
+      {
+        "executionId": "06bf19ed-6430-49c3-a406-8b05e5c7fe54",
+        "chatSessionId": "sess_76b655fd-4e3a-46f4-a97a-b57304e105e1",
+        "timestamp": 1786875455323
+      },
+      {
+        "executionId": "06bf19ed-6430-49c3-a406-8b05e5c7fe54",
+        "chatSessionId": "sess_76b655fd-4e3a-46f4-a97a-b57304e105e1",
+        "timestamp": 1786875465338
+      },
+      {
+        "executionId": "06bf19ed-6430-49c3-a406-8b05e5c7fe54",
+        "chatSessionId": "sess_76b655fd-4e3a-46f4-a97a-b57304e105e1",
+        "timestamp": 1786875871884
+      }
+    ],
+    "12.2 Implement pinned TOML schema, parser, validator, and formatter": [
+      {
+        "executionId": "06bf19ed-6430-49c3-a406-8b05e5c7fe54",
+        "chatSessionId": "sess_76b655fd-4e3a-46f4-a97a-b57304e105e1",
+        "timestamp": 1786875455514
+      },
+      {
+        "executionId": "06bf19ed-6430-49c3-a406-8b05e5c7fe54",
+        "chatSessionId": "sess_76b655fd-4e3a-46f4-a97a-b57304e105e1",
+        "timestamp": 1786875882050
+      },
+      {
+        "executionId": "06bf19ed-6430-49c3-a406-8b05e5c7fe54",
+        "chatSessionId": "sess_76b655fd-4e3a-46f4-a97a-b57304e105e1",
+        "timestamp": 1786876166110
+      }
+    ],
+    "12.4 Implement layer discovery, partial merging, and conflict-safe fallback": [
+      {
+        "executionId": "06bf19ed-6430-49c3-a406-8b05e5c7fe54",
+        "chatSessionId": "sess_76b655fd-4e3a-46f4-a97a-b57304e105e1",
+        "timestamp": 1786875455774
+      }
+    ],
+    "12.6 Replace fixed shortcut tables with effective-map routing": [
+      {
+        "executionId": "06bf19ed-6430-49c3-a406-8b05e5c7fe54",
+        "chatSessionId": "sess_76b655fd-4e3a-46f4-a97a-b57304e105e1",
+        "timestamp": 1786875455922
+      }
+    ],
+    "12.8 Wire keyboard image viewing and navigation aliases into the reducer": [
+      {
+        "executionId": "06bf19ed-6430-49c3-a406-8b05e5c7fe54",
+        "chatSessionId": "sess_76b655fd-4e3a-46f4-a97a-b57304e105e1",
+        "timestamp": 1786875455975
+      }
+    ],
+    "12.10 Render effective shortcut labels, help groups, diagnostics, and full-screen toggles": [
+      {
+        "executionId": "06bf19ed-6430-49c3-a406-8b05e5c7fe54",
+        "chatSessionId": "sess_76b655fd-4e3a-46f4-a97a-b57304e105e1",
+        "timestamp": 1786875456220
+      }
+    ],
+    "13. Final configurable-keybinding checkpoint - Ensure all tests pass": [
+      {
+        "executionId": "06bf19ed-6430-49c3-a406-8b05e5c7fe54",
+        "chatSessionId": "sess_76b655fd-4e3a-46f4-a97a-b57304e105e1",
+        "timestamp": 1786875456281
+      }
+    ],
+    "12.3 Write property test for TOML binding round-trip": [
+      {
+        "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
+        "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
+        "timestamp": 1786877779782
+      },
+      {
+        "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
+        "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
+        "timestamp": 1786877792803
+      }
+    ],
+    "12.5 Write property test for layer precedence and partial fallback": [
+      {
+        "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
+        "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
+        "timestamp": 1786877779859
+      }
+    ],
+    "12.7 Write property test for exclusive, text-safe effective bindings": [
+      {
+        "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
+        "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
+        "timestamp": 1786877779908
+      }
+    ],
+    "12.9 Write property test for view bounds and navigation aliases": [
+      {
+        "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
+        "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
+        "timestamp": 1786877779978
+      }
+    ],
+    "12.11 Add core, desktop, and hosted platform integration coverage": [
+      {
+        "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
+        "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
+        "timestamp": 1786877780031
       }
     ]
   }

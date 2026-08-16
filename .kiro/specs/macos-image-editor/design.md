@@ -438,7 +438,7 @@ The app does not auto-install packages, prompt the user to install dependencies 
 | Layer | Scope | Tools/approach |
 |---|---|---|
 | Core unit tests | Exact mappings, representative state transitions, error messages, resource limits | Rust `cargo test` |
-| Property tests | The 11 properties above against pure core/adapters | `proptest`, at least 100 cases/property |
+| Property tests | The 15 properties above against pure core/adapters | `proptest`, at least 100 cases/property |
 | Codec integration tests | Real fixture decode/encode, malformed files, PNG/TIFF equivalence, JPEG/HEIC tolerance | Temp directories and fixed fixtures; optional HEIC suite gated by detected capability |
 | Desktop integration tests | One-window startup, visible controls, keyboard routing once, crop overlay coordinate conversion | eframe test harness / accessibility tree where supported |
 | Font configuration tests | Bundled font discovery, required glyph coverage, `egui::FontDefinitions` priority/fallback construction, and registration failures | Pure unit tests with packaged-fixture bytes and injected resource/registration failures |
@@ -482,6 +482,7 @@ The following testability classification covers every acceptance criterion. `P` 
 | 9 | 9.1 S/I (startup probes before request); 9.2 P9 + I; 9.3–9.8 P1/P9 + E/I (notices, filtering, disabled controls, portable independence). |
 | 10 | 10.1–10.2 P10 + cross-platform I; 10.3–10.4 P8; 10.5 S/I (shared capabilities available on both targets). |
 | 11 | 11.1 S (package manifests/dependency documentation); 11.2–11.3 P9 + S/I (degraded/available operation projection); 11.4–11.5 I (actual platform choosers); 11.6–11.7 S/I (package font resource/license metadata and unreadable-resource startup failure). |
+| 12 | 12.1 P13 + I (ordered source discovery and partial overrides); 12.2 P12 + E (multi-binding parser/formatter round trip); 12.3 E (default-table fixture); 12.4–12.5 P13/P14 + E (read, parse, validation, collision diagnostics, and fallback); 12.6–12.9 P15 + E (fit, zoom, pan, and navigation aliases); 12.10 I (full-screen request and failure retention); 12.11–12.12 P14 + E/visual regression (effective labels, help groups, and text focus); 12.13 E (no-active view/navigation no-op). |
 
 ### CI matrix and acceptance gates
 
@@ -489,7 +490,7 @@ CI will run a pinned Rust toolchain on `aarch64-apple-darwin` and `x86_64-unknow
 
 Required gates before release:
 
-1. Formatting, clippy, core unit tests, and all 11 property tests pass with at least 100 generated cases each on both platforms.
+1. Formatting, clippy, core unit tests, and all 15 property tests pass with at least 100 generated cases each on both platforms.
 2. Cross-platform conformance fixtures produce equal deterministic pipeline artifacts on both platforms.
 3. PNG/TIFF export-reopen tests verify exact width, height, and RGBA samples. JPEG/HEIC tests verify dimensions, orientation/crop semantics, and successful decode rather than exact lossy samples.
 4. macOS and Linux packaging smoke tests start exactly one window with optional HEIC and dialog dependencies both present and intentionally absent.
@@ -506,3 +507,158 @@ The application will ship separate, target-specific installable packages that de
 - **Reproducibility:** build from a locked dependency graph, record Rust toolchain and target, record the bundled font name/version/license/checksum, separate compile-time features (`portable-codecs`, `heic`, `xdg-portal`, `gtk`) from runtime availability, and generate SBOM/license data for bundled native libraries and the font resource.
 
 Packaging must never turn an optional dependency into an undisclosed startup prerequisite. If a package installs without a portal backend or HEIC codec plugin, the application still opens its one primary window and projects that fact as disabled capability-aware behavior. If its mandatory Bundled_Font_Resource cannot be read or registered, it must instead follow the visible Startup_Availability_Error path and must not open a normal workspace with missing-glyph text.
+
+
+## Configurable Keybindings and Image Viewing Extension
+
+### Overview and design decisions
+
+The fixed `ShortcutResolver` table becomes the built-in `Keybinding_Configuration`, not a second competing shortcut path. A startup `KeybindingService` discovers four layers in descending priority: the optional explicit CLI `--keybindings <path>`, project `.yampixr/keybindings.toml` relative to the process project root, the platform user path (`~/Library/Application Support/yampixr/keybindings.toml` on macOS, `$XDG_CONFIG_HOME/yampixr/keybindings.toml` on Linux), and the compiled built-in default. The CLI layer is consulted only when the argument is supplied; absent project and user files are normal absence states without a diagnostic.
+
+Every configuration layer is parsed independently and is a partial declaration: it changes only its declared actions. The merge is deterministic. Candidate declarations are considered by layer precedence. Within a layer, every action involved in a duplicate normalized gesture is rejected as a group and receives a diagnostic; no lexical or hash-map iteration chooses a winner. Across layers, an already accepted higher-layer gesture blocks a lower-layer candidate action, which then retains its lower candidate if non-conflicting or becomes unbound with a diagnostic. Thus each accepted gesture selects exactly one action, unrelated valid actions remain available, and a bad high-priority declaration does not erase a valid lower declaration.
+
+The core has no filesystem, environment-variable, or eframe dependency. It accepts ordered source inputs and parsed text, returns an immutable `EffectiveKeybindingMap` plus diagnostics, and owns the view reducer. The desktop adapter obtains paths and CLI/environment values, reads files, forwards safe read errors, uses the map for event routing and labels, and delegates the actual window full-screen side effect to eframe only after the core emits `ToggleFullscreen`.
+
+### Components and interfaces
+
+```rust
+pub enum KeybindingAction {
+    FitToWindow, ZoomActual, Zoom200, ZoomIn, ZoomOut,
+    PanLeft, PanDown, PanUp, PanRight,
+    PreviousImage, NextImage, FirstImage, LastImage, ToggleFullscreen,
+    FlipHorizontal, FlipVertical, RotateClockwise90, RotateCounterclockwise90,
+    EnterCrop, FocusBrightness, FocusContrast, CommitAdjustment,
+    Undo, Redo, IncreaseAdjustment, DecreaseAdjustment,
+}
+
+pub struct KeybindingGesture {
+    pub key: ShortcutKey,
+    pub modifiers: KeyModifiers,
+}
+
+pub struct EffectiveKeybindingMap {
+    by_gesture: BTreeMap<KeybindingGesture, KeybindingAction>,
+    by_action: BTreeMap<KeybindingAction, Vec<KeybindingGesture>>,
+}
+
+pub trait KeybindingSourceReader {
+    fn read(&self, source: &KeybindingSource) -> Result<Option<String>, KeybindingReadError>;
+}
+
+pub fn resolve_keybindings(
+    platform: RuntimePlatform,
+    layers: &[KeybindingLayerInput],
+) -> KeybindingResolution;
+
+pub fn parse_keybinding_configuration(
+    text: &str,
+    source: KeybindingSource,
+) -> Result<PartialKeybindingConfiguration, Vec<KeybindingDiagnostic>>;
+
+pub fn format_keybinding_configuration(
+    configuration: &ValidatedKeybindingConfiguration) -> String;
+```
+
+`Keybinding_Configuration` uses deterministic TOML tables. `[bindings]` is platform-neutral; `[macos.bindings]` and `[linux.bindings]` selectively replace the corresponding global action declaration on that platform. Each value is an array, so aliases such as `next_image = ["Right", "Down", "PageDown", "Space"]` are first-class. The parser canonicalizes key spelling and modifier order before collision detection, accepts only keys exposed by `ShortcutKey`, and accepts `Command`/`Option` only on macOS and `Control`/`Alt` only on Linux except where a platform-specific table makes the combination valid for that platform. The formatter sorts action names and gestures, writes canonical modifier/key spellings, and emits TOML that the parser accepts into an equivalent validated configuration.
+
+The built-in configuration is explicit and test-fixture-visible:
+
+| Group | Action | Built-in binding(s) |
+|---|---|---|
+| 缩放与视图 | `fit_to_window`, `zoom_actual`, `zoom_200`, `zoom_in`, `zoom_out` | `0`; `1`; `2`; `+`, `=`; `-` |
+| 缩放与视图 | `pan_left`, `pan_down`, `pan_up`, `pan_right` | `H`; `J`; `K`; `L` |
+| 浏览 | `previous_image`, `next_image`, `first_image`, `last_image` | Left, Up, PageUp; Right, Down, PageDown, Space; Home; End |
+| 文件 | `toggle_fullscreen` | Linux: F11; macOS: F11, Control+Command+F |
+| 编辑 | 翻转、旋转、裁剪、调整、提交、撤销/重做 | 既有 F/Shift+F、R/Shift+R、C、B、D、Enter，以及平台正确的撤销/重做和调整键 |
+
+`ShortcutResolver` becomes a thin pure lookup over `EffectiveKeybindingMap`. It resolves only a pressed, non-repeat event that has not been consumed by `Text_Input_Focus`; the desktop adapter must mark every key event consumed by an editable text widget before invoking the resolver. One event results in either zero or one `EditorCommand`, never multiple commands. `shortcut_label` and the command palette derive labels from `by_action`, formatting macOS modifiers as `Command`/`Option` and Linux modifiers as `Control`/`Alt`.
+
+```rust
+pub struct ViewState {
+    pub zoom: ZoomMode,
+    pub manual_scale: RationalScale,
+    pub canvas_offset: LogicalVector,
+    pub preview_size: LogicalSize,
+}
+
+pub enum ZoomMode { FitToWindow, Manual }
+
+pub enum EditorCommand {
+    // existing variants
+    SetFitToWindow,
+    SetManualZoom { percent: u16 },
+    ZoomByStep { direction: ZoomDirection },
+    PanCanvas { direction: PanDirection },
+    ToggleFullscreen,
+}
+```
+
+`ViewReducer` keeps fit-to-window scale equal to the smaller axis ratio between the rendered image and the available Preview size. `1` and `2` set manual scale to exactly 100% and 200%. `+`/`=` multiply manual scale by `1.25`; `-` divides by `1.25`; each result clamps to 25%–800%. H/J/K/L modifies only the relevant canvas offset by `Pan_Step` when the scaled image exceeds the Preview on that axis. Every scale, viewport-size, image-change, and pan operation clamps offsets to the image bounds; a pan with no scrollable extent is a no-op. Selection/navigation aliases route to the existing decode-before-activation commands, so Left/Up/PageUp are identical `PreviousImage` intents and Right/Down/PageDown/Space are identical `NextImage` intents.
+
+### Data models and diagnostics
+
+```rust
+pub enum KeybindingSource {
+    ExplicitCli(AbsolutePath),
+    Project(AbsolutePath),
+    User(AbsolutePath),
+    BuiltIn,
+}
+
+pub struct KeybindingDiagnostic {
+    pub source: KeybindingSource,
+    pub action: Option<KeybindingActionName>,
+    pub gesture: Option<String>,
+    pub category: KeybindingDiagnosticKind,
+    pub safe_message: String,
+}
+
+pub enum KeybindingDiagnosticKind {
+    ReadFailed, InvalidToml, UnknownAction, UnknownKey,
+    IllegalModifier, DuplicateGesture, BlockedByHigherPriority,
+}
+```
+
+Diagnostics contain a normalized source description, line/column where TOML supplies one, and an actionable reason; they never include arbitrary configuration contents, stack traces, or environment values. The source reader distinguishes a missing optional project/user file from read failure. An explicitly named CLI file that cannot be read is diagnosed, then lower layers continue. The desktop view exposes diagnostics in the existing non-modal notice area.
+
+### Correctness properties
+
+The feature contains pure parsing, merging, routing, and viewport transformation logic with large input domains, so PBT is appropriate for those core layers. Native environment path discovery, filesystem permission failures, eframe full-screen application, command-palette rendering, and actual focus delivery remain example/integration tests.
+
+### Property 12: TOML bindings round-trip and preserve aliases
+
+For any validated keybinding configuration containing supported action names and one or more non-conflicting gestures per action, formatting then parsing the configuration shall produce an equivalent platform-neutral and platform-specific declaration with the same ordered action-to-gesture sets.
+
+**Validates: Requirements 12.2**
+
+### Property 13: Layered partial overrides retain valid lower declarations
+
+For any ordered set of keybinding layers and platform, resolving the layers shall use the highest-priority valid declaration for each action, retain lower-layer declarations for actions not validly declared above, and produce the same map and diagnostics regardless of input-map insertion order.
+
+**Validates: Requirements 12.1, 12.3, 12.4, 12.5**
+
+### Property 14: Effective bindings are exclusive and text-safe
+
+For any parsed keybinding layers, every gesture in the resulting EffectiveKeybindingMap shall resolve to at most one action; any duplicate or unsupported gesture shall resolve to no command and a diagnostic; and every event marked as consumed by a text control shall resolve to no command.
+
+**Validates: Requirements 12.4, 12.5, 12.12**
+
+### Property 15: View transforms remain bounded and navigation aliases are semantically equivalent
+
+For any nonzero image size, Preview size, initial ViewState, and sequence of zoom or pan commands, the resulting scale shall remain in the configured range and every canvas offset shall remain within the image bounds; for any navigation alias configured for previous or next image, resolving the alias shall emit the same corresponding navigation command.
+
+**Validates: Requirements 12.6, 12.8, 12.9**
+
+### Error handling additions
+
+| Condition | UI behavior | Effective behavior |
+|---|---|---|
+| Explicit CLI file cannot be read or TOML is invalid | Notice identifies layer/path and safe reason | Continue with project, user, and built-in candidates |
+| Optional project/user file is absent | No error notice | Continue to the next layer |
+| Unknown action/key or illegal platform modifier | Notice identifies declaration | Reject only that action declaration and retain fallback candidates |
+| Duplicate gesture in a layer or collision with accepted higher mapping | Notice identifies gesture and conflicting action(s) | Never dispatch more than one command; preserve non-conflicting actions and lower fallback where available |
+| Full-screen adapter rejects a toggle | Non-modal platform error | Preserve key map and editor/view state; retain the current window mode |
+
+### Testing strategy additions
+
+Use pinned `toml` and `serde` crates for parsing/formatting rather than a custom TOML grammar. Add one `proptest` function per Properties 12–15 with at least 100 cases and the existing traceability comment format. Unit tests cover known default tables, macOS/Linux label spellings, malformed TOML line/column diagnostics, invalid modifiers, explicit CLI read failures, and exact 100%/200%/fit calculations. Desktop tests verify that toolbar buttons and the command palette display the effective bindings in the four groups 浏览、缩放与视图、编辑、文件; focus an editable text widget and assert configured printable shortcuts do not execute; mock the full-screen adapter on both platforms; and verify no-active, collection-boundary, and unzoomed-pan cases are no-ops. Hosted macOS/Linux integration tests validate user-path selection, CLI/project/user/built-in precedence, and F11 versus Control+Command+F full-screen variants.

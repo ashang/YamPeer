@@ -36,6 +36,11 @@ jobs:
           package_startup_smoke_uses_one_workspace_with_optional_dependencies_present_or_missing
       - name: Test capability projection for present and missing HEIC runtimes
         run: cargo test --locked --package image_editor_codecs --test packaging_smoke
+      - name: Smoke test packaged font resource and startup routes
+        run: >-
+          cargo test --locked --package image_editor_desktop --no-default-features
+          --features native-window,portable-codecs,${{ matrix.dialog_feature }}
+          --test package_font_smoke
       - name: Generate target capability manifest
         run: >-
           cargo run --locked --package image_editor_desktop

@@ -25,3 +25,5 @@ rfd = { version = "=0.15.3", default-features = false }
 zbus = { version = "=5.4.0", default-features = false, features = ["async-io", "blocking-api"] }
 # Keep ashpd 0.11.x on the zvariant macro release compatible with Rust 1.85.
 zvariant = { version = "=5.4.0", default-features = false }
+serde = { version = "=1.0.229", features = ["derive"] }
+toml = "=0.8.23"

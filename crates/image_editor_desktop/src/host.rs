@@ -122,13 +122,17 @@ pub fn run() -> eframe::Result {
             // This is the first creation-callback operation. Do not construct
             // the editable workspace until the packaged font is readable,
             // parseable, and registered on the eframe-provided context.
-            let application: Box<dyn eframe::App> =
-                match image_editor_desktop::font_bootstrap::FontBootstrapper::for_current_package()
-                    .and_then(|bootstrapper| bootstrapper.install(&creation_context.egui_ctx))
-                {
-                    Ok(()) => Box::new(DesktopApp::new()),
-                    Err(failure) => Box::new(StartupAvailabilityErrorApp { failure }),
-                };
+            let application: Box<dyn eframe::App> = match image_editor_desktop::font_bootstrap::StartupRoute::from_bootstrap(
+                image_editor_desktop::font_bootstrap::FontBootstrapper::for_current_package()
+                    .and_then(|bootstrapper| bootstrapper.install(&creation_context.egui_ctx)),
+            ) {
+                image_editor_desktop::font_bootstrap::StartupRoute::InteractiveEditor => {
+                    Box::new(DesktopApp::new())
+                }
+                image_editor_desktop::font_bootstrap::StartupRoute::StartupAvailabilityError(
+                    failure,
+                ) => Box::new(StartupAvailabilityErrorApp { failure }),
+            };
             Ok(application)
         }),
     )
@@ -1586,5 +1590,146 @@ mod desktop_workspace_tests {
             command_title(RuntimePlatform::Linux, "撤销", &EditorCommand::Undo),
             "撤销 (Control+Z)"
         );
+    }
+}
+
+#[cfg(test)]
+mod chinese_text_visual_regression_tests {
+    use std::path::Path;
+
+    use eframe::egui;
+    use image_editor_core::{
+        EditorCommand, ErrorCategory, NoticeSeverity, NoticeSubject, RuntimePlatform, SafeError,
+        Utf8FileName, VisibleNotice,
+    };
+
+    use super::{command_title, render_notice};
+
+    const CHINESE_UI_LABEL: &str = "图像集合";
+    const CHINESE_FILENAME: &str = "杭州西湖.png";
+    const CHINESE_AVAILABILITY_NOTICE: &str = "HEIC 解码当前不可用";
+
+    fn bundled_font_context() -> egui::Context {
+        let context = egui::Context::default();
+        let resource = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(image_editor_desktop::BUNDLED_FONT_SOURCE_PATH);
+        image_editor_desktop::font_bootstrap::FontBootstrapper::from_resource_path(resource)
+            .install(&context)
+            .expect("the bundled CJK font must install on the headless test surface");
+        context
+    }
+
+    fn collect_text(shape: &egui::epaint::Shape, texts: &mut Vec<String>) {
+        match shape {
+            egui::epaint::Shape::Text(text) => texts.push(text.galley.job.text.clone()),
+            egui::epaint::Shape::Vec(shapes) => {
+                for shape in shapes {
+                    collect_text(shape, texts);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn render_chinese_surface(context: &egui::Context, platform: RuntimePlatform) -> Vec<String> {
+        let availability = VisibleNotice::new(
+            NoticeSeverity::Availability,
+            NoticeSubject::FileName(
+                Utf8FileName::new(CHINESE_FILENAME)
+                    .expect("Chinese fixture filename is valid UTF-8"),
+            ),
+            SafeError::new(
+                ErrorCategory::OptionalDependency,
+                CHINESE_AVAILABILITY_NOTICE,
+            ),
+        );
+        let output = context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(640.0, 360.0),
+                )),
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    // These widgets match the collection pane's label, filename
+                    // presentation, notice renderer, and shortcut-label helper.
+                    ui.heading(CHINESE_UI_LABEL);
+                    ui.label(CHINESE_FILENAME);
+                    render_notice(ui, &availability);
+                    ui.label(command_title(
+                        platform,
+                        "增加调整",
+                        &EditorCommand::IncreaseAdjustment,
+                    ));
+                    ui.label(command_title(platform, "撤销", &EditorCommand::Undo));
+                });
+            },
+        );
+        let mut texts = Vec::new();
+        for shape in &output.shapes {
+            collect_text(&shape.shape, &mut texts);
+        }
+        texts
+    }
+
+    fn assert_bundled_glyphs_rendered(texts: &[String], expected: &[String]) {
+        for text in expected {
+            assert!(
+                texts.iter().any(|rendered| rendered.contains(text)),
+                "headless desktop surface is missing {text:?}; rendered text: {texts:#?}"
+            );
+        }
+        assert!(
+            texts.iter().all(|rendered| !rendered.contains('□')),
+            "headless desktop surface must reject missing-glyph boxes: {texts:#?}"
+        );
+
+        // The context above has this exact resource first in both egui font
+        // families. Verifying every rendered required character has a glyph in
+        // the resource makes a tofu fallback impossible for this surface.
+        let resource = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(image_editor_desktop::BUNDLED_FONT_SOURCE_PATH);
+        let bytes = std::fs::read(resource).expect("bundled CJK font must remain readable");
+        let face = ttf_parser::Face::parse(&bytes, 0).expect("bundled CJK font must remain valid");
+        let missing = expected
+            .iter()
+            .flat_map(|text| text.chars())
+            .filter(|character| face.glyph_index(*character).is_none())
+            .map(|character| format!("U+{:04X}", character as u32))
+            .collect::<Vec<_>>();
+        assert!(
+            missing.is_empty(),
+            "bundled font would render missing-glyph boxes for required surface text: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn chinese_text_headless_visual_regression_uses_bundled_face_on_both_platform_variants() {
+        for (platform, adjustment_label, undo_label) in [
+            (
+                RuntimePlatform::MacOs,
+                "增加调整 (Option+Up)",
+                "撤销 (Command+Z)",
+            ),
+            (
+                RuntimePlatform::Linux,
+                "增加调整 (Alt+Up)",
+                "撤销 (Control+Z)",
+            ),
+        ] {
+            let context = bundled_font_context();
+            let texts = render_chinese_surface(&context, platform);
+            let expected = [
+                CHINESE_UI_LABEL.to_owned(),
+                CHINESE_FILENAME.to_owned(),
+                format!("{CHINESE_FILENAME}: {CHINESE_AVAILABILITY_NOTICE}"),
+                adjustment_label.to_owned(),
+                undo_label.to_owned(),
+            ];
+
+            assert_bundled_glyphs_rendered(&texts, &expected);
+        }
     }
 }

@@ -62,6 +62,18 @@ Image Editor 是一款面向 macOS 和 Linux 用户的桌面图片浏览与基�
 - **Font_Configuration**：Desktop_Host 在创建 Primary_Main_Window 的工作区之前构造 `egui::FontDefinitions`，将 Bundled_Font_Resource 注册为中文、常用拉丁字符和界面符号的优先字体及回退字体的配置。
 - **Font_Initialization_Failure**：Bundled_Font_Resource 无法读取、字体数据无法被 Font_Configuration 接受，或 Font_Configuration 无法在首次工作区绘制前注册的状态。
 - **Startup_Availability_Error**：Font_Initialization_Failure 发生时显示的安全、可见错误状态；该状态不包含堆栈跟踪、原始字体数据或其他敏感诊断数据。
+- **Keybinding_Action**：Image_Editor 可由快捷键触发的具名语义命令，包括浏览、缩放与视图、编辑和文件操作；动作名称是配置文件和诊断使用的稳定 ASCII 标识符。
+- **Keybinding_Gesture**：由一个受支持的非修饰键和零个或多个受支持修饰键组成的规范化按键组合；同一规范化手势在一个 Effective_Keybinding_Map 中至多属于一个 Keybinding_Action。
+- **Keybinding_Configuration**：包含全局 `bindings` 表以及可选 `macos.bindings`、`linux.bindings` 表的 TOML 文档；每个声明的 Keybinding_Action 映射到一个包含一个或多个 Keybinding_Gesture 文本表示的数组。
+- **Keybinding_Configuration_Parser**：将 Keybinding_Configuration 文本转换为已验证动作声明或 Keybinding_Diagnostic 的组件。
+- **Keybinding_Configuration_Formatter**：将已验证 Keybinding_Configuration 转换为规范 TOML 文本的组件。
+- **Keybinding_Layer**：按优先级从高到低为显式 CLI `--keybindings <path>`、项目 `.yampixr/keybindings.toml`、当前 Supported_Platform 的用户配置路径和内置默认值的一个 Keybinding_Configuration 来源。
+- **Effective_Keybinding_Map**：在当前 Supported_Platform 上按 Keybinding_Layer 优先级、平台表和冲突规则解析后，从每个 Keybinding_Gesture 到至多一个 Keybinding_Action 的不可变映射。
+- **Keybinding_Diagnostic**：识别 Keybinding_Layer、配置路径（内置默认值除外）、动作或手势以及失败原因的安全、可读状态；失败原因包括不可读取或无效 TOML、未知动作、未知按键、非法修饰键和重复绑定。
+- **Text_Input_Focus**：Primary_Main_Window 中接收字符编辑输入并将当前 RawKeyEvent 标记为已由文本控件消费的状态。
+- **View_State**：Active_Image 的当前缩放比例、适应窗口状态、画布偏移和 Preview 可用逻辑尺寸；View_State 不改变 Source_Image_File、Edit_History 或 Redo_History。
+- **Zoom_Step**：将手动缩放比例乘以 `1.25` 或除以 `1.25` 的固定比例；缩放比例限制为 25% 至 800%（包含端点）。
+- **Pan_Step**：按 Preview 当前可用逻辑宽度或高度的 10% 计算的画布偏移增量；画布偏移在每个轴上被限制为不显示图像边界之外的空白区域。
 
 ## Requirements
 
@@ -228,3 +240,24 @@ Image Editor 是一款面向 macOS 和 Linux 用户的桌面图片浏览与基�
 5. WHERE the Platform_Integration_Capability for selecting a local export file path is available, WHEN a user invokes the export action, THE Image_Editor SHALL present the corresponding Platform_File_Chooser.
 6. WHEN Image_Editor is distributed for a Supported_Platform, THE Installable_Platform_Package SHALL include a Bundled_Font_Resource and identify the Bundled_Font_Resource license and resource path in package metadata.
 7. IF an Installable_Platform_Package cannot provide a readable Bundled_Font_Resource at startup, THEN THE Image_Editor SHALL produce a Startup_Availability_Error before accepting browsing or editing commands.
+
+
+### Requirement 12: Configure Shortcuts and Control Image Viewing
+
+**User Story:** As a macOS or Linux desktop user, I want to configure keyboard shortcuts and use keyboard image-view controls, so that the editor matches my workflow while retaining predictable browsing and editing behavior.
+
+#### Acceptance Criteria
+
+1. WHEN Image_Editor starts, THE Image_Editor SHALL build the Effective_Keybinding_Map by applying declared actions from Keybinding_Layer values in this descending order: explicit CLI `--keybindings <path>`, project `.yampixr/keybindings.toml`, macOS `~/Library/Application Support/yampixr/keybindings.toml` or Linux `$XDG_CONFIG_HOME/yampixr/keybindings.toml`, and built-in defaults; a higher Keybinding_Layer SHALL replace only the Keybinding_Action values declared by that layer.
+2. WHEN Keybinding_Configuration_Parser accepts a Keybinding_Configuration, THE Keybinding_Configuration_Parser SHALL accept one or more Keybinding_Gesture values for each declared Keybinding_Action, and THE Keybinding_Configuration_Formatter SHALL render a TOML document that Keybinding_Configuration_Parser parses into an equivalent validated Keybinding_Configuration.
+3. THE Image_Editor SHALL provide built-in defaults for `fit_to_window` as `0`, `zoom_actual` as `1`, `zoom_200` as `2`, `zoom_in` as `+` and `=`, `zoom_out` as `-`, `pan_left` as `H`, `pan_down` as `J`, `pan_up` as `K`, `pan_right` as `L`, `previous_image` as Left, Up, and PageUp, `next_image` as Right, Down, PageDown, and Space, `first_image` as Home, `last_image` as End, Linux `toggle_fullscreen` as F11, macOS `toggle_fullscreen` as F11 and Control+Command+F, and the existing F/Shift+F, R/Shift+R, C, B, D, Enter, platform-correct undo/redo, and platform-correct adjustment bindings.
+4. IF a Keybinding_Layer cannot be read, contains invalid TOML, declares an unknown Keybinding_Action or Keybinding_Gesture key name, or declares an illegal modifier for the current Supported_Platform, THEN THE Image_Editor SHALL display a Keybinding_Diagnostic that identifies the source and reason, reject the invalid declaration, and continue resolving declarations from lower-priority Keybinding_Layer values.
+5. IF two declared Keybinding_Action values normalize to the same Keybinding_Gesture in one Keybinding_Layer or a lower-priority declaration normalizes to a Keybinding_Gesture accepted from a higher-priority Keybinding_Layer, THEN THE Image_Editor SHALL display a Keybinding_Diagnostic that identifies the conflicting gesture and actions, map the Keybinding_Gesture to no more than one Keybinding_Action, and retain every non-conflicting valid declaration or lower-priority fallback declaration.
+6. WHEN a user invokes `fit_to_window`, `zoom_actual`, `zoom_200`, `zoom_in`, or `zoom_out` through the Effective_Keybinding_Map while an Active_Image exists, THE Image_Editor SHALL set View_State to respectively fit the rendered Active_Image inside the Preview, exactly 100%, exactly 200%, one Zoom_Step larger, or one Zoom_Step smaller and constrain the scale to 25% through 800% inclusive.
+7. WHILE the scaled Active_Image exceeds the Preview on a horizontal or vertical axis, WHEN a user invokes the corresponding `pan_left`, `pan_down`, `pan_up`, or `pan_right` Keybinding_Action, THE Image_Editor SHALL change only the applicable View_State canvas offset by one Pan_Step and constrain the canvas offset to the rendered Active_Image bounds.
+8. WHILE the scaled Active_Image does not exceed the Preview on the requested pan axis, WHEN a user invokes `pan_left`, `pan_down`, `pan_up`, or `pan_right`, THE Image_Editor SHALL retain the prior View_State.
+9. WHEN a user invokes any configured `previous_image`, `next_image`, `first_image`, or `last_image` Keybinding_Gesture, THE Image_Editor SHALL execute the corresponding existing navigation behavior, including collection boundaries, decode-before-activation, decode-failure retention, and no-Active_Image behavior.
+10. WHEN a user invokes the configured `toggle_fullscreen` Keybinding_Gesture on macOS or Linux, THE Image_Editor SHALL request the corresponding Primary_Main_Window full-screen state transition and retain the prior Primary_Main_Window mode when the current Supported_Platform rejects the request.
+11. WHEN Image_Editor displays a command control or shortcut-help entry, THE Image_Editor SHALL display every Keybinding_Gesture assigned by the Effective_Keybinding_Map using macOS Command and Option labels on macOS or Linux Control and Alt labels on Linux, and SHALL group shortcut-help entries as 浏览, 缩放与视图, 编辑, and 文件.
+12. WHILE Text_Input_Focus exists, WHEN Image_Editor receives a Keybinding_Gesture marked as consumed by the focused text control, THE Image_Editor SHALL retain the Browsing_State, View_State, Edit_History, and Redo_History and allow the focused text control to process the Keybinding_Gesture.
+13. WHILE no Active_Image exists, WHEN a user invokes any configured zoom, pan, or browsing Keybinding_Gesture, THE Image_Editor SHALL retain the Browsing_State and View_State.

@@ -20,7 +20,11 @@ name = "generate-capabilities"
 path = "src/bin/generate_capabilities.rs"
 
 [features]
-default = ["portable-codecs", "native-window"]
+# Default Cargo builds, including `cargo run --release`, may load the checked-in
+# resource when no installable package has been staged. Release package commands
+# use `--no-default-features` and therefore cannot fall back to a build tree.
+default = ["portable-codecs", "native-window", "development-font-fallback"]
+development-font-fallback = []
 native-window = ["dep:eframe", "dep:ttf-parser"]
 portable-codecs = ["image_editor_codecs/portable-codecs"]
 heic = ["image_editor_codecs/heic"]

@@ -4,6 +4,13 @@
 //! dependencies. Its constructors make the invariant-bearing values used at
 //! every adapter boundary impossible to construct accidentally.
 
+pub mod keybindings;
+
+pub use keybindings::{
+    KeybindingParseResult, PartialKeybindingConfiguration, ValidatedKeybindingConfiguration,
+    format_keybinding_configuration, parse_keybinding_configuration,
+};
+
 use std::{collections::BTreeMap, fmt, path::Path};
 
 /// The result type shared by Image Editor crates.
@@ -2560,20 +2567,24 @@ pub enum RuntimePlatform {
 /// The adapter may derive this identity from either the native logical key or
 /// its physical key code. Letter matching is case-insensitive so both paths
 /// resolve to the same keyboard intent.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ShortcutKey {
     Character(char),
     ArrowUp,
     ArrowDown,
     ArrowLeft,
     ArrowRight,
+    PageUp,
+    PageDown,
     Home,
     End,
     Enter,
+    Space,
+    F11,
 }
 
 impl ShortcutKey {
-    fn normalized(self) -> Self {
+    pub fn normalized(self) -> Self {
         match self {
             Self::Character(character) => Self::Character(character.to_ascii_lowercase()),
             key => key,
@@ -2582,7 +2593,7 @@ impl ShortcutKey {
 }
 
 /// Modifier state normalized from a native key event.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 pub struct KeyModifiers {
     pub command: bool,
     pub control: bool,
@@ -2656,6 +2667,617 @@ impl KeyModifiers {
     fn is_linux_adjustment(self) -> bool {
         !self.command && !self.control && !self.option && self.alt && !self.shift
     }
+}
+
+/// A stable ASCII action identifier used by keybinding configuration and diagnostics.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum KeybindingAction {
+    FitToWindow,
+    ZoomActual,
+    Zoom200,
+    ZoomIn,
+    ZoomOut,
+    PanLeft,
+    PanDown,
+    PanUp,
+    PanRight,
+    PreviousImage,
+    NextImage,
+    FirstImage,
+    LastImage,
+    ToggleFullscreen,
+    FlipHorizontal,
+    FlipVertical,
+    RotateClockwise90,
+    RotateCounterclockwise90,
+    EnterCrop,
+    FocusBrightness,
+    FocusContrast,
+    CommitAdjustment,
+    Undo,
+    Redo,
+    IncreaseAdjustment,
+    DecreaseAdjustment,
+}
+
+impl KeybindingAction {
+    /// Returns the stable ASCII identifier persisted in keybinding files.
+    pub const fn stable_name(self) -> &'static str {
+        match self {
+            Self::FitToWindow => "fit_to_window",
+            Self::ZoomActual => "zoom_actual",
+            Self::Zoom200 => "zoom_200",
+            Self::ZoomIn => "zoom_in",
+            Self::ZoomOut => "zoom_out",
+            Self::PanLeft => "pan_left",
+            Self::PanDown => "pan_down",
+            Self::PanUp => "pan_up",
+            Self::PanRight => "pan_right",
+            Self::PreviousImage => "previous_image",
+            Self::NextImage => "next_image",
+            Self::FirstImage => "first_image",
+            Self::LastImage => "last_image",
+            Self::ToggleFullscreen => "toggle_fullscreen",
+            Self::FlipHorizontal => "flip_horizontal",
+            Self::FlipVertical => "flip_vertical",
+            Self::RotateClockwise90 => "rotate_clockwise_90",
+            Self::RotateCounterclockwise90 => "rotate_counterclockwise_90",
+            Self::EnterCrop => "enter_crop",
+            Self::FocusBrightness => "focus_brightness",
+            Self::FocusContrast => "focus_contrast",
+            Self::CommitAdjustment => "commit_adjustment",
+            Self::Undo => "undo",
+            Self::Redo => "redo",
+            Self::IncreaseAdjustment => "increase_adjustment",
+            Self::DecreaseAdjustment => "decrease_adjustment",
+        }
+    }
+}
+
+/// A normalized non-modifier key with its complete modifier set.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct KeybindingGesture {
+    pub key: ShortcutKey,
+    pub modifiers: KeyModifiers,
+}
+
+impl KeybindingGesture {
+    pub fn new(key: ShortcutKey, modifiers: KeyModifiers) -> Self {
+        Self {
+            key: key.normalized(),
+            modifiers,
+        }
+    }
+}
+
+/// A source from which a keybinding declaration was obtained.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum KeybindingSource {
+    ExplicitCli(AbsolutePath),
+    Project(AbsolutePath),
+    User(AbsolutePath),
+    BuiltIn,
+}
+
+/// The safe category of a keybinding configuration diagnostic.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum KeybindingDiagnosticKind {
+    ReadFailed,
+    InvalidToml,
+    UnknownAction,
+    UnknownKey,
+    IllegalModifier,
+    DuplicateGesture,
+    BlockedByHigherPriority,
+}
+
+/// A source-aware, safe diagnostic emitted while resolving keybindings.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KeybindingDiagnostic {
+    pub source: KeybindingSource,
+    pub action: Option<KeybindingAction>,
+    pub gesture: Option<String>,
+    pub category: KeybindingDiagnosticKind,
+    pub safe_message: String,
+}
+
+impl KeybindingDiagnostic {
+    pub fn new(
+        source: KeybindingSource,
+        action: Option<KeybindingAction>,
+        gesture: Option<String>,
+        category: KeybindingDiagnosticKind,
+        safe_message: impl Into<String>,
+    ) -> Self {
+        Self {
+            source,
+            action,
+            gesture,
+            category,
+            safe_message: safe_message.into(),
+        }
+    }
+}
+
+/// An immutable one-to-many action index and exclusive gesture index.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct EffectiveKeybindingMap {
+    by_gesture: BTreeMap<KeybindingGesture, KeybindingAction>,
+    by_action: BTreeMap<KeybindingAction, Vec<KeybindingGesture>>,
+}
+
+impl EffectiveKeybindingMap {
+    pub fn try_from_bindings(
+        bindings: BTreeMap<KeybindingAction, Vec<KeybindingGesture>>,
+    ) -> std::result::Result<Self, KeybindingGesture> {
+        let mut by_gesture = BTreeMap::new();
+        let mut by_action = BTreeMap::new();
+
+        for (action, mut gestures) in bindings {
+            gestures.sort_unstable();
+            gestures.dedup();
+            if gestures.is_empty() {
+                continue;
+            }
+            for gesture in &gestures {
+                if let Some(existing) = by_gesture.insert(*gesture, action) {
+                    if existing != action {
+                        return Err(*gesture);
+                    }
+                }
+            }
+            by_action.insert(action, gestures);
+        }
+
+        Ok(Self {
+            by_gesture,
+            by_action,
+        })
+    }
+
+    pub fn action_for(&self, gesture: KeybindingGesture) -> Option<KeybindingAction> {
+        self.by_gesture.get(&gesture).copied()
+    }
+
+    pub fn gestures_for(&self, action: KeybindingAction) -> &[KeybindingGesture] {
+        self.by_action
+            .get(&action)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    pub fn by_gesture(&self) -> &BTreeMap<KeybindingGesture, KeybindingAction> {
+        &self.by_gesture
+    }
+
+    pub fn by_action(&self) -> &BTreeMap<KeybindingAction, Vec<KeybindingGesture>> {
+        &self.by_action
+    }
+}
+
+/// Returns the complete, deterministic built-in binding table for one platform.
+pub fn built_in_keybinding_map(platform: RuntimePlatform) -> EffectiveKeybindingMap {
+    let plain = KeyModifiers::default();
+    let shift = plain.with_shift();
+    let primary = match platform {
+        RuntimePlatform::MacOs => KeyModifiers::command(),
+        RuntimePlatform::Linux => KeyModifiers::control(),
+    };
+    let adjustment = match platform {
+        RuntimePlatform::MacOs => KeyModifiers::option(),
+        RuntimePlatform::Linux => KeyModifiers::alt(),
+    };
+    let mut bindings = BTreeMap::new();
+    let mut add = |action, gestures: Vec<KeybindingGesture>| {
+        bindings.insert(action, gestures);
+    };
+    let gesture = KeybindingGesture::new;
+
+    add(
+        KeybindingAction::FitToWindow,
+        vec![gesture(ShortcutKey::Character('0'), plain)],
+    );
+    add(
+        KeybindingAction::ZoomActual,
+        vec![gesture(ShortcutKey::Character('1'), plain)],
+    );
+    add(
+        KeybindingAction::Zoom200,
+        vec![gesture(ShortcutKey::Character('2'), plain)],
+    );
+    add(
+        KeybindingAction::ZoomIn,
+        vec![
+            gesture(ShortcutKey::Character('+'), plain),
+            gesture(ShortcutKey::Character('='), plain),
+        ],
+    );
+    add(
+        KeybindingAction::ZoomOut,
+        vec![gesture(ShortcutKey::Character('-'), plain)],
+    );
+    add(
+        KeybindingAction::PanLeft,
+        vec![gesture(ShortcutKey::Character('h'), plain)],
+    );
+    add(
+        KeybindingAction::PanDown,
+        vec![gesture(ShortcutKey::Character('j'), plain)],
+    );
+    add(
+        KeybindingAction::PanUp,
+        vec![gesture(ShortcutKey::Character('k'), plain)],
+    );
+    add(
+        KeybindingAction::PanRight,
+        vec![gesture(ShortcutKey::Character('l'), plain)],
+    );
+    add(
+        KeybindingAction::PreviousImage,
+        vec![
+            gesture(ShortcutKey::ArrowLeft, plain),
+            gesture(ShortcutKey::ArrowUp, plain),
+            gesture(ShortcutKey::PageUp, plain),
+        ],
+    );
+    add(
+        KeybindingAction::NextImage,
+        vec![
+            gesture(ShortcutKey::ArrowRight, plain),
+            gesture(ShortcutKey::ArrowDown, plain),
+            gesture(ShortcutKey::PageDown, plain),
+            gesture(ShortcutKey::Space, plain),
+        ],
+    );
+    add(
+        KeybindingAction::FirstImage,
+        vec![gesture(ShortcutKey::Home, plain)],
+    );
+    add(
+        KeybindingAction::LastImage,
+        vec![gesture(ShortcutKey::End, plain)],
+    );
+    let mut fullscreen = vec![gesture(ShortcutKey::F11, plain)];
+    if platform == RuntimePlatform::MacOs {
+        fullscreen.push(gesture(
+            ShortcutKey::Character('f'),
+            KeyModifiers {
+                command: true,
+                control: true,
+                option: false,
+                alt: false,
+                shift: false,
+            },
+        ));
+    }
+    add(KeybindingAction::ToggleFullscreen, fullscreen);
+    add(
+        KeybindingAction::FlipHorizontal,
+        vec![gesture(ShortcutKey::Character('f'), plain)],
+    );
+    add(
+        KeybindingAction::FlipVertical,
+        vec![gesture(ShortcutKey::Character('f'), shift)],
+    );
+    add(
+        KeybindingAction::RotateClockwise90,
+        vec![gesture(ShortcutKey::Character('r'), plain)],
+    );
+    add(
+        KeybindingAction::RotateCounterclockwise90,
+        vec![gesture(ShortcutKey::Character('r'), shift)],
+    );
+    add(
+        KeybindingAction::EnterCrop,
+        vec![gesture(ShortcutKey::Character('c'), plain)],
+    );
+    add(
+        KeybindingAction::FocusBrightness,
+        vec![gesture(ShortcutKey::Character('b'), plain)],
+    );
+    add(
+        KeybindingAction::FocusContrast,
+        vec![gesture(ShortcutKey::Character('d'), plain)],
+    );
+    add(
+        KeybindingAction::CommitAdjustment,
+        vec![gesture(ShortcutKey::Enter, plain)],
+    );
+    add(
+        KeybindingAction::Undo,
+        vec![gesture(ShortcutKey::Character('z'), primary)],
+    );
+    add(
+        KeybindingAction::Redo,
+        vec![gesture(ShortcutKey::Character('z'), primary.with_shift())],
+    );
+    add(
+        KeybindingAction::IncreaseAdjustment,
+        vec![gesture(ShortcutKey::ArrowUp, adjustment)],
+    );
+    add(
+        KeybindingAction::DecreaseAdjustment,
+        vec![gesture(ShortcutKey::ArrowDown, adjustment)],
+    );
+
+    EffectiveKeybindingMap::try_from_bindings(bindings)
+        .expect("built-in keybindings must not contain duplicate gestures")
+}
+
+/// A logical preview or rendered-image size used by the view reducer.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LogicalSize {
+    pub width: u32,
+    pub height: u32,
+}
+
+impl LogicalSize {
+    pub const fn new(width: u32, height: u32) -> Self {
+        Self { width, height }
+    }
+
+    pub const fn is_empty(self) -> bool {
+        self.width == 0 || self.height == 0
+    }
+}
+
+/// A logical canvas translation from the centered image position.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LogicalVector {
+    pub x: i64,
+    pub y: i64,
+}
+
+/// A positive scale stored exactly as a reduced rational number.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RationalScale {
+    numerator: u32,
+    denominator: u32,
+}
+
+impl RationalScale {
+    pub const MIN: Self = Self {
+        numerator: 1,
+        denominator: 4,
+    };
+    pub const MAX: Self = Self {
+        numerator: 8,
+        denominator: 1,
+    };
+    pub const ONE: Self = Self {
+        numerator: 1,
+        denominator: 1,
+    };
+    pub const TWO: Self = Self {
+        numerator: 2,
+        denominator: 1,
+    };
+
+    pub fn new(numerator: u32, denominator: u32) -> Option<Self> {
+        if numerator == 0 || denominator == 0 {
+            return None;
+        }
+        let divisor = gcd(numerator, denominator);
+        Some(Self {
+            numerator: numerator / divisor,
+            denominator: denominator / divisor,
+        })
+    }
+
+    pub const fn numerator(self) -> u32 {
+        self.numerator
+    }
+
+    pub const fn denominator(self) -> u32 {
+        self.denominator
+    }
+
+    pub fn clamp(self) -> Self {
+        if self.less_than(Self::MIN) {
+            Self::MIN
+        } else if self.greater_than(Self::MAX) {
+            Self::MAX
+        } else {
+            self
+        }
+    }
+
+    fn multiplied(self, numerator: u32, denominator: u32) -> Self {
+        let value = Self::new(
+            self.numerator.saturating_mul(numerator),
+            self.denominator.saturating_mul(denominator),
+        )
+        .expect("a positive scale multiplied by a positive ratio remains positive");
+        value.clamp()
+    }
+
+    fn less_than(self, other: Self) -> bool {
+        u64::from(self.numerator) * u64::from(other.denominator)
+            < u64::from(other.numerator) * u64::from(self.denominator)
+    }
+
+    fn greater_than(self, other: Self) -> bool {
+        u64::from(self.numerator) * u64::from(other.denominator)
+            > u64::from(other.numerator) * u64::from(self.denominator)
+    }
+}
+
+const fn gcd(mut left: u32, mut right: u32) -> u32 {
+    while right != 0 {
+        let remainder = left % right;
+        left = right;
+        right = remainder;
+    }
+    left
+}
+
+/// Whether the scale follows the preview fit calculation or a manual value.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ZoomMode {
+    FitToWindow,
+    Manual,
+}
+
+/// A fixed view-command zoom direction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ZoomDirection {
+    In,
+    Out,
+}
+
+/// A directional canvas movement constrained to the rendered image bounds.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PanDirection {
+    Left,
+    Down,
+    Up,
+    Right,
+}
+
+/// View-only state; it does not own image pixels, history, or source data.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ViewState {
+    pub zoom: ZoomMode,
+    pub manual_scale: RationalScale,
+    pub canvas_offset: LogicalVector,
+    pub preview_size: LogicalSize,
+}
+
+impl Default for ViewState {
+    fn default() -> Self {
+        Self::for_preview_size(LogicalSize::default())
+    }
+}
+
+impl ViewState {
+    pub const fn for_preview_size(preview_size: LogicalSize) -> Self {
+        Self {
+            zoom: ZoomMode::FitToWindow,
+            manual_scale: RationalScale::ONE,
+            canvas_offset: LogicalVector { x: 0, y: 0 },
+            preview_size,
+        }
+    }
+
+    pub fn effective_scale(&self, image_size: LogicalSize) -> RationalScale {
+        match self.zoom {
+            ZoomMode::Manual => self.manual_scale.clamp(),
+            ZoomMode::FitToWindow => fit_scale(image_size, self.preview_size),
+        }
+    }
+
+    pub fn with_preview_size(&self, preview_size: LogicalSize, image_size: LogicalSize) -> Self {
+        Self {
+            preview_size,
+            ..self.clone()
+        }
+        .clamped_to_image(image_size)
+    }
+
+    pub fn fit_to_window(&self, image_size: LogicalSize) -> Self {
+        Self {
+            zoom: ZoomMode::FitToWindow,
+            canvas_offset: LogicalVector::default(),
+            ..self.clone()
+        }
+        .clamped_to_image(image_size)
+    }
+
+    pub fn set_manual_zoom(&self, percent: u16, image_size: LogicalSize) -> Self {
+        let requested = RationalScale::new(u32::from(percent.max(1)), 100)
+            .expect("a nonzero percent creates a valid scale")
+            .clamp();
+        Self {
+            zoom: ZoomMode::Manual,
+            manual_scale: requested,
+            ..self.clone()
+        }
+        .clamped_to_image(image_size)
+    }
+
+    pub fn zoom_by_step(&self, direction: ZoomDirection, image_size: LogicalSize) -> Self {
+        let base = self.effective_scale(image_size);
+        let manual_scale = match direction {
+            ZoomDirection::In => base.multiplied(5, 4),
+            ZoomDirection::Out => base.multiplied(4, 5),
+        };
+        Self {
+            zoom: ZoomMode::Manual,
+            manual_scale,
+            ..self.clone()
+        }
+        .clamped_to_image(image_size)
+    }
+
+    pub fn pan(&self, direction: PanDirection, image_size: LogicalSize) -> Self {
+        let mut next = self.clone().clamped_to_image(image_size);
+        let (maximum_x, maximum_y) = next.offset_limits(image_size);
+        match direction {
+            PanDirection::Left if maximum_x > 0 => {
+                next.canvas_offset.x -= pan_step(next.preview_size.width);
+            }
+            PanDirection::Right if maximum_x > 0 => {
+                next.canvas_offset.x += pan_step(next.preview_size.width);
+            }
+            PanDirection::Up if maximum_y > 0 => {
+                next.canvas_offset.y -= pan_step(next.preview_size.height);
+            }
+            PanDirection::Down if maximum_y > 0 => {
+                next.canvas_offset.y += pan_step(next.preview_size.height);
+            }
+            _ => return next,
+        }
+        next.clamped_to_image(image_size)
+    }
+
+    pub fn clamped_to_image(&self, image_size: LogicalSize) -> Self {
+        let mut next = self.clone();
+        let (maximum_x, maximum_y) = next.offset_limits(image_size);
+        next.canvas_offset.x = next.canvas_offset.x.clamp(-maximum_x, maximum_x);
+        next.canvas_offset.y = next.canvas_offset.y.clamp(-maximum_y, maximum_y);
+        next
+    }
+
+    fn offset_limits(&self, image_size: LogicalSize) -> (i64, i64) {
+        let scale = self.effective_scale(image_size);
+        let scaled_width = scaled_extent(image_size.width, scale);
+        let scaled_height = scaled_extent(image_size.height, scale);
+        (
+            half_overflow(scaled_width, self.preview_size.width),
+            half_overflow(scaled_height, self.preview_size.height),
+        )
+    }
+}
+
+fn fit_scale(image_size: LogicalSize, preview_size: LogicalSize) -> RationalScale {
+    if image_size.is_empty() || preview_size.is_empty() {
+        return RationalScale::MIN;
+    }
+    let width = RationalScale::new(preview_size.width, image_size.width)
+        .expect("nonzero dimensions create a valid scale");
+    let height = RationalScale::new(preview_size.height, image_size.height)
+        .expect("nonzero dimensions create a valid scale");
+    if width.less_than(height) {
+        width.clamp()
+    } else {
+        height.clamp()
+    }
+}
+
+fn scaled_extent(dimension: u32, scale: RationalScale) -> u64 {
+    let numerator = u64::from(dimension) * u64::from(scale.numerator());
+    let denominator = u64::from(scale.denominator());
+    numerator.div_ceil(denominator)
+}
+
+fn half_overflow(scaled: u64, preview: u32) -> i64 {
+    let overflow = scaled.saturating_sub(u64::from(preview));
+    i64::try_from(overflow.div_ceil(2)).expect("logical dimensions fit in i64")
+}
+
+fn pan_step(preview_dimension: u32) -> i64 {
+    i64::try_from(u64::from(preview_dimension).div_ceil(10).max(1))
+        .expect("logical dimensions fit in i64")
 }
 
 /// A raw key event normalized at the desktop boundary without importing UI APIs.
@@ -2879,6 +3501,22 @@ pub enum EditorCommand {
     CommitAdjustment,
     Undo,
     Redo,
+    /// Updates the preview's available logical size and reclamps any active canvas offset.
+    SetPreviewSize {
+        preview_size: LogicalSize,
+    },
+    SetFitToWindow,
+    SetManualZoom {
+        percent: u16,
+    },
+    ZoomByStep {
+        direction: ZoomDirection,
+    },
+    PanCanvas {
+        direction: PanDirection,
+    },
+    /// Requests a host-owned full-screen transition without mutating document state.
+    ToggleFullscreen,
 }
 
 /// The complete output of a pure state transition.
@@ -2893,6 +3531,7 @@ pub struct Reduction {
 pub struct EditorState {
     capabilities: CapabilitySnapshot,
     browsing: BrowsingState,
+    view: ViewState,
     mode: InteractionMode,
     pending: BTreeMap<RequestId, PendingRequest>,
     notices: Vec<VisibleNotice>,
@@ -2908,6 +3547,7 @@ impl EditorState {
             notices: capabilities.diagnostics().to_vec(),
             capabilities,
             browsing: BrowsingState::default(),
+            view: ViewState::default(),
             mode: InteractionMode::Browse,
             pending: BTreeMap::new(),
             next_request_id: 0,
@@ -2923,6 +3563,10 @@ impl EditorState {
 
     pub fn browsing(&self) -> &BrowsingState {
         &self.browsing
+    }
+
+    pub fn view_state(&self) -> &ViewState {
+        &self.view
     }
 
     pub const fn mode(&self) -> InteractionMode {
@@ -2981,6 +3625,39 @@ impl EditorState {
         self.pending.remove(&token.request_id)
     }
 
+    fn active_image_size(&self) -> Option<LogicalSize> {
+        let image_id = self.browsing.active.as_ref()?;
+        let document = self.browsing.documents.get(image_id)?;
+        let mut size = LogicalSize::new(document.source.width(), document.source.height());
+        for operation in &document.history {
+            match operation {
+                EditOperation::RotateClockwise90 | EditOperation::RotateCounterclockwise90 => {
+                    size = LogicalSize::new(size.height, size.width);
+                }
+                EditOperation::Crop(crop) => {
+                    size = LogicalSize::new(crop.width(), crop.height());
+                }
+                EditOperation::FlipHorizontal
+                | EditOperation::FlipVertical
+                | EditOperation::Brightness(_)
+                | EditOperation::Contrast(_) => {}
+            }
+        }
+        Some(size)
+    }
+
+    fn reset_view_for_active_image(&mut self) {
+        if let Some(image_size) = self.active_image_size() {
+            self.view = self.view.fit_to_window(image_size);
+        }
+    }
+
+    fn clamp_view_to_active_image(&mut self) {
+        if let Some(image_size) = self.active_image_size() {
+            self.view = self.view.clamped_to_image(image_size);
+        }
+    }
+
     fn start_decode(&mut self, candidate: CollectionEntry) -> Effect {
         let token = self.issue_token(self.browsing.revision);
         self.pending.insert(
@@ -3001,6 +3678,35 @@ pub fn reduce(state: &EditorState, command: EditorCommand) -> Reduction {
     let mut effects = Vec::new();
 
     match command {
+        EditorCommand::SetPreviewSize { preview_size } => {
+            if let Some(image_size) = state.active_image_size() {
+                state.view = state.view.with_preview_size(preview_size, image_size);
+            } else {
+                state.view.preview_size = preview_size;
+                state.view.canvas_offset = LogicalVector::default();
+            }
+        }
+        EditorCommand::SetFitToWindow => {
+            if let Some(image_size) = state.active_image_size() {
+                state.view = state.view.fit_to_window(image_size);
+            }
+        }
+        EditorCommand::SetManualZoom { percent } => {
+            if let Some(image_size) = state.active_image_size() {
+                state.view = state.view.set_manual_zoom(percent, image_size);
+            }
+        }
+        EditorCommand::ZoomByStep { direction } => {
+            if let Some(image_size) = state.active_image_size() {
+                state.view = state.view.zoom_by_step(direction, image_size);
+            }
+        }
+        EditorCommand::PanCanvas { direction } => {
+            if let Some(image_size) = state.active_image_size() {
+                state.view = state.view.pan(direction, image_size);
+            }
+        }
+        EditorCommand::ToggleFullscreen => {}
         EditorCommand::BeginFolderEnumeration { folder } => {
             state.browsing.revision = state.browsing.revision.next();
             let token = state.issue_token(state.browsing.revision);
@@ -3034,6 +3740,7 @@ pub fn reduce(state: &EditorState, command: EditorCommand) -> Reduction {
                     state.browsing.documents.clear();
                     state.browsing.preview =
                         PreviewState::for_collection(&state.browsing.collection);
+                    state.view = ViewState::for_preview_size(state.view.preview_size);
                     state.mode = InteractionMode::Browse;
                     state.notices = state.capabilities.diagnostics().to_vec();
                     state.notices.extend(plan.availability_notices());
@@ -3135,6 +3842,7 @@ pub fn reduce(state: &EditorState, command: EditorCommand) -> Reduction {
                 .or_insert_with(|| ImageDocument::new(image));
             state.browsing.active = Some(image_id.clone());
             state.mode = InteractionMode::Browse;
+            state.reset_view_for_active_image();
             if let Some(effect) = state.start_preview(image_id) {
                 effects.push(effect);
             }
@@ -3524,5 +4232,6 @@ pub fn reduce(state: &EditorState, command: EditorCommand) -> Reduction {
         }
     }
 
+    state.clamp_view_to_active_image();
     Reduction { state, effects }
 }

@@ -273,7 +273,10 @@ impl CodecRegistry {
         #[cfg(not(feature = "portable-codecs"))]
         let portable: Option<&dyn PortableCodecSelfCheck> = None;
 
+        #[cfg(any(feature = "portable-codecs", feature = "heic"))]
         let mut registry = Self::detect_with(platform, portable, &UnconfiguredHeicProbe);
+        #[cfg(not(any(feature = "portable-codecs", feature = "heic")))]
+        let registry = Self::detect_with(platform, portable, &UnconfiguredHeicProbe);
         #[cfg(feature = "portable-codecs")]
         registry.register(Arc::new(PortableImageCodec));
         #[cfg(feature = "heic")]

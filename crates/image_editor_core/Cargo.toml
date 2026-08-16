@@ -11,5 +11,9 @@ description = "Platform-independent domain contracts for Image Editor"
 [lib]
 path = "src/lib.rs"
 
+[dependencies]
+serde.workspace = true
+toml.workspace = true
+
 [dev-dependencies]
 proptest = "=1.6.0"
