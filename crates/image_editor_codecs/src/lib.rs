@@ -1025,35 +1025,36 @@ impl ImageCodec for HeicImageCodec {
                     message: error.to_string(),
                 })?;
         }
-        let mut planes = encoded.planes_mut();
-        copy_heif_channel(
-            planes.r.as_mut().ok_or_else(|| CodecError::Output {
+        {
+            let mut planes = encoded.planes_mut();
+            copy_heif_channel(
+                planes.r.as_mut().ok_or_else(|| CodecError::Output {
+                    format,
+                    message: "libheif did not create a red plane".to_owned(),
+                })?,
+                image,
+                |pixel| pixel.red,
                 format,
-                message: "libheif did not create a red plane".to_owned(),
-            })?,
-            image,
-            |pixel| pixel.red,
-            format,
-        )?;
-        copy_heif_channel(
-            planes.g.as_mut().ok_or_else(|| CodecError::Output {
+            )?;
+            copy_heif_channel(
+                planes.g.as_mut().ok_or_else(|| CodecError::Output {
+                    format,
+                    message: "libheif did not create a green plane".to_owned(),
+                })?,
+                image,
+                |pixel| pixel.green,
                 format,
-                message: "libheif did not create a green plane".to_owned(),
-            })?,
-            image,
-            |pixel| pixel.green,
-            format,
-        )?;
-        copy_heif_channel(
-            planes.b.as_mut().ok_or_else(|| CodecError::Output {
+            )?;
+            copy_heif_channel(
+                planes.b.as_mut().ok_or_else(|| CodecError::Output {
+                    format,
+                    message: "libheif did not create a blue plane".to_owned(),
+                })?,
+                image,
+                |pixel| pixel.blue,
                 format,
-                message: "libheif did not create a blue plane".to_owned(),
-            })?,
-            image,
-            |pixel| pixel.blue,
-            format,
-        )?;
-        drop(planes);
+            )?;
+        }
 
         let mut context = HeifContext::new().map_err(|error| CodecError::Output {
             format,

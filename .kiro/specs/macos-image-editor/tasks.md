@@ -107,7 +107,7 @@ Implement the application as a Rust workspace with a platform-independent `image
 - [x] 6. Checkpoint - Ensure core tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 7. Add guarded codecs, filesystem operations, and non-destructive export
+- [x] 7. Add guarded codecs, filesystem operations, and non-destructive export
   - [x] 7.1 Implement bounded codec decode/encode adapters
     - Implement `ImageCodec` dispatch, resource limits, malformed-file failures, portable lossless PNG/TIFF conversion, JPEG encoding, and runtime-probed optional HEIC registration.
     - Keep unavailable codec capability distinct from a content decode failure.
@@ -125,12 +125,12 @@ Implement the application as a Rust workspace with a platform-independent `image
   - [x] 7.5 Implement create-new export execution and typed completion handling
     - Render the planned full-resolution result, encode through a sibling temporary/new destination, flush, publish only without replacement, clean up only attempt-created failures, and report path-specific errors without state mutation.
     - _Requirements: 7.2-7.7_
-  - [-] 7.6 Write filesystem/export integration tests
+  - [x] 7.6 Write filesystem/export integration tests
     - Use temporary directories to verify source and existing target bytes survive conflicts/failures, create-new races fail safely, and reopened portable exports meet format-appropriate equivalence.
     - _Requirements: 7.2-7.7_
 
-- [ ] 8. Implement platform adapters and the single-window desktop workspace
-  - [-] 8.1 Implement macOS/Linux platform capability, dialog, and filesystem adapters
+- [x] 8. Implement platform adapters and the single-window desktop workspace
+  - [x] 8.1 Implement macOS/Linux platform capability, dialog, and filesystem adapters
     - Probe native folder/save dialog availability before requests; use `rfd` backends with macOS and XDG Portal/GTK Linux detection, map runtime loss to availability notices, and provide platform file identities.
     - Keep unavailable platform integrations non-fatal and disable only their dependent operations.
     - _Requirements: 1.1, 7.1, 9.1, 9.2, 9.7, 11.2-11.5_
@@ -163,7 +163,7 @@ Implement the application as a Rust workspace with a platform-independent `image
   - [x] 9.4 Write packaging smoke and cross-platform integration tests
     - On macOS and Linux CI runners, verify package startup opens one window with optional HEIC/dialog dependencies both present and absent, and compare conformance artifacts plus PNG/TIFF export-reopen results.
     - _Requirements: 8.4, 10.1, 10.2, 10.5, 11.1-11.5_
-  - [~] 9.5 Wire the final application composition and CI quality gates
+  - [-] 9.5 Wire the final application composition and CI quality gates
     - Connect workspace crates into the shipping binary and add deterministic commands for formatting, clippy, core tests, property tests with at least 100 cases/property, target builds, and hosted integration suites.
     - Ensure all implemented code paths are reachable from the primary window and all optional feature combinations compile.
     - _Requirements: 1.1-11.5_

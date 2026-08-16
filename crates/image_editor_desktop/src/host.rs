@@ -24,9 +24,8 @@ use image_editor_core::{
     DirectoryEntry, DirectoryEntryKind, DirectoryEntryLocation, EditorCommand, EditorState, Effect,
     ErrorCategory, FolderEnumerationInput, ImageFormat, InteractionMode, KeyModifiers,
     NoticeSeverity, NoticeSubject, PreviewState, RawKeyEvent, Revision, RuntimePlatform, SafeError,
-    VisibleNotice,
-    ShortcutKey, Utf8FileName, plan_folder_enumeration, reduce, render_current_editing_result,
-    resolve_shortcut, shortcut_label,
+    ShortcutKey, Utf8FileName, VisibleNotice, plan_folder_enumeration, reduce,
+    render_current_editing_result, resolve_shortcut, shortcut_label,
 };
 use image_editor_platform::PlatformDialogs;
 #[cfg(any(feature = "macos-dialogs", feature = "xdg-portal", feature = "gtk"))]
@@ -346,10 +345,15 @@ impl DesktopApp {
 
     fn render_collection_pane(&mut self, ui: &mut egui::Ui) {
         ui.heading("图像集合");
-        let folder_available = self.state.capabilities().folder_picker().is_available();
+        let live_folder_capability = self.dialogs.folder_picker_available();
+        let folder_available = self.state.capabilities().folder_picker().is_available()
+            && live_folder_capability.is_available();
         let folder_reason = unavailable_reason(
-            self.state.capabilities().folder_picker().availability(),
-            "当前平台没有可用的文件夹选择器",
+            live_folder_capability.availability(),
+            &unavailable_reason(
+                self.state.capabilities().folder_picker().availability(),
+                "当前平台没有可用的文件夹选择器",
+            ),
         );
         let response = ui.add_enabled(folder_available, egui::Button::new("打开文件夹"));
         if !folder_available {
@@ -609,7 +613,9 @@ impl DesktopApp {
 
         ui.separator();
         ui.label("导出");
-        let save_available = self.state.capabilities().save_picker().is_available();
+        let live_save_capability = self.dialogs.save_picker_available();
+        let save_available = self.state.capabilities().save_picker().is_available()
+            && live_save_capability.is_available();
         let export_formats = [
             ImageFormat::Jpeg,
             ImageFormat::Png,
@@ -623,8 +629,11 @@ impl DesktopApp {
             no_active_reason.to_owned()
         } else {
             unavailable_reason(
-                self.state.capabilities().save_picker().availability(),
-                "当前没有可用的导出文件选择器",
+                live_save_capability.availability(),
+                &unavailable_reason(
+                    self.state.capabilities().save_picker().availability(),
+                    "当前没有可用的导出文件选择器",
+                ),
             )
         };
         if export_formats.is_empty() {
@@ -646,7 +655,12 @@ impl DesktopApp {
 
         ui.separator();
         ui.label(format!("{} 个请求正在处理", self.state.pending().len()));
-        for notice in self.state.notices() {
+        for notice in self
+            .state
+            .notices()
+            .iter()
+            .chain(self.runtime_dialog_notices.iter())
+        {
             render_notice(ui, notice);
         }
     }
@@ -1484,6 +1498,35 @@ mod desktop_workspace_tests {
         assert_eq!(
             source_pixel_coordinate(egui::pos2(190.0, 110.0), rect, 200, 100),
             (180, 90)
+        );
+    }
+
+    #[test]
+    fn runtime_dialog_failure_becomes_an_availability_notice() {
+        let mut app = DesktopApp::new();
+        app.record_runtime_dialog_failure(image_editor_core::ApplicationError::PlatformOperation {
+            capability: image_editor_core::CapabilityName::SavePicker,
+            cause: image_editor_core::SafeError::new(
+                image_editor_core::ErrorCategory::PlatformIntegration,
+                "XDG Desktop Portal service disappeared",
+            ),
+        });
+
+        assert_eq!(app.runtime_dialog_notices.len(), 1);
+        let notice = &app.runtime_dialog_notices[0];
+        assert_eq!(
+            notice.severity,
+            image_editor_core::NoticeSeverity::Availability
+        );
+        assert!(matches!(
+            &notice.subject,
+            image_editor_core::NoticeSubject::Capability(
+                image_editor_core::CapabilityName::SavePicker
+            )
+        ));
+        assert_eq!(
+            notice.message.summary(),
+            "XDG Desktop Portal service disappeared"
         );
     }
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Compile every desktop feature subset so optional capability wiring cannot rot.
+# Compile all 64 desktop feature subsets so optional capability wiring cannot rot.
 set -euo pipefail
 
 cargo_command=${CARGO:-cargo}

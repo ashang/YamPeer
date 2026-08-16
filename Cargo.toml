@@ -17,8 +17,10 @@ authors = ["Image Editor Contributors"]
 repository = "https://example.invalid/image-editor"
 
 [workspace.dependencies]
-eframe = { version = "=0.31.1", default-features = false, features = ["default_fonts", "wgpu"] }
+eframe = { version = "=0.31.1", default-features = false, features = ["default_fonts", "wgpu", "x11"] }
 image = { version = "=0.25.6", default-features = false, features = ["jpeg", "png", "tiff"] }
 libheif-rs = { version = "=1.1.0", default-features = false }
 rfd = { version = "=0.15.3", default-features = false }
-zbus = { version = "=5.8.0", default-features = false, features = ["async-io", "blocking-api"] }
+zbus = { version = "=5.4.0", default-features = false, features = ["async-io", "blocking-api"] }
+# Keep ashpd 0.11.x on the zvariant macro release compatible with Rust 1.85.
+zvariant = { version = "=5.4.0", default-features = false }

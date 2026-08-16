@@ -574,6 +574,11 @@
         "executionId": "e36cd776-ca87-4482-aabb-495987c44be9",
         "chatSessionId": "sess_7d66f558-b81b-4da0-b1c1-46a65cce26db",
         "timestamp": 1786862935656
+      },
+      {
+        "executionId": "e36cd776-ca87-4482-aabb-495987c44be9",
+        "chatSessionId": "sess_7d66f558-b81b-4da0-b1c1-46a65cce26db",
+        "timestamp": 1786863272085
       }
     ],
     "8.1 Implement macOS/Linux platform capability, dialog, and filesystem adapters": [
@@ -601,6 +606,11 @@
         "executionId": "e36cd776-ca87-4482-aabb-495987c44be9",
         "chatSessionId": "sess_7d66f558-b81b-4da0-b1c1-46a65cce26db",
         "timestamp": 1786862936126
+      },
+      {
+        "executionId": "e36cd776-ca87-4482-aabb-495987c44be9",
+        "chatSessionId": "sess_7d66f558-b81b-4da0-b1c1-46a65cce26db",
+        "timestamp": 1786863272576
       }
     ],
     "8.2 Write platform adapter integration tests": [
@@ -759,6 +769,11 @@
         "executionId": "1cdc53bc-5f9d-461c-8136-8832ed143e21",
         "chatSessionId": "sess_98bed8a2-f193-4fef-a452-a8113b51451e",
         "timestamp": 1786862020836
+      },
+      {
+        "executionId": "e36cd776-ca87-4482-aabb-495987c44be9",
+        "chatSessionId": "sess_7d66f558-b81b-4da0-b1c1-46a65cce26db",
+        "timestamp": 1786863284392
       }
     ],
     "10. Final checkpoint - Ensure all tests pass": [
@@ -804,6 +819,20 @@
         "executionId": "1cdc53bc-5f9d-461c-8136-8832ed143e21",
         "chatSessionId": "sess_98bed8a2-f193-4fef-a452-a8113b51451e",
         "timestamp": 1786862119802
+      }
+    ],
+    "7. Add guarded codecs, filesystem operations, and non-destructive export": [
+      {
+        "executionId": "e36cd776-ca87-4482-aabb-495987c44be9",
+        "chatSessionId": "sess_7d66f558-b81b-4da0-b1c1-46a65cce26db",
+        "timestamp": 1786863272170
+      }
+    ],
+    "8. Implement platform adapters and the single-window desktop workspace": [
+      {
+        "executionId": "e36cd776-ca87-4482-aabb-495987c44be9",
+        "chatSessionId": "sess_7d66f558-b81b-4da0-b1c1-46a65cce26db",
+        "timestamp": 1786863272706
       }
     ]
   }

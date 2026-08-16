@@ -1874,16 +1874,13 @@ impl DraftAdjustments {
             return Vec::new();
         };
 
-        let brightness = std::mem::take(&mut self.brightness);
-        let contrast = std::mem::take(&mut self.contrast);
-        let mut operations = Vec::with_capacity(2);
-        if focused == AdjustmentKind::Brightness || brightness != AdjustmentValue::ZERO {
-            operations.push(EditOperation::Brightness(brightness));
-        }
-        if focused == AdjustmentKind::Contrast || contrast != AdjustmentValue::ZERO {
-            operations.push(EditOperation::Contrast(contrast));
-        }
-        operations
+        let operation = match focused {
+            AdjustmentKind::Brightness => {
+                EditOperation::Brightness(std::mem::take(&mut self.brightness))
+            }
+            AdjustmentKind::Contrast => EditOperation::Contrast(std::mem::take(&mut self.contrast)),
+        };
+        vec![operation]
     }
 }
 

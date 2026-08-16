@@ -16,10 +16,11 @@ default = []
 # These features determine only which rfd adapters are linked. Runtime probes
 # still decide whether a native dialog is usable in the current session.
 macos-dialogs = ["dep:rfd"]
-xdg-portal = ["dep:rfd", "dep:zbus", "rfd/async-std", "rfd/xdg-portal"]
+xdg-portal = ["dep:rfd", "dep:zbus", "dep:zvariant", "rfd/async-std", "rfd/xdg-portal"]
 gtk = ["dep:rfd", "rfd/gtk3"]
 
 [dependencies]
 image_editor_core = { path = "../image_editor_core" }
 rfd = { workspace = true, optional = true }
 zbus = { workspace = true, optional = true }
+zvariant = { workspace = true, optional = true }
