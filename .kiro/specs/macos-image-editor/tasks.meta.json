@@ -1158,6 +1158,112 @@
         "chatSessionId": "sess_aef30f99-5e70-4a97-85ee-79cae082c8ff",
         "timestamp": 1786914943660
       }
+    ],
+    "14.1 Implement versioned settings values and bounded decoding in the pure core": [
+      {
+        "executionId": "d0087ac9-db5a-4f51-acb9-ebb5fa546b29",
+        "chatSessionId": "sess_a8912c9d-ada9-41a7-a835-042e88af84b0",
+        "timestamp": 1786927551082
+      },
+      {
+        "executionId": "d0087ac9-db5a-4f51-acb9-ebb5fa546b29",
+        "chatSessionId": "sess_a8912c9d-ada9-41a7-a835-042e88af84b0",
+        "timestamp": 1786927562956
+      },
+      {
+        "executionId": "d0087ac9-db5a-4f51-acb9-ebb5fa546b29",
+        "chatSessionId": "sess_a8912c9d-ada9-41a7-a835-042e88af84b0",
+        "timestamp": 1786927804164
+      }
+    ],
+    "14.2 Write Property 16 test for bounded settings round trips and fallback": [
+      {
+        "executionId": "d0087ac9-db5a-4f51-acb9-ebb5fa546b29",
+        "chatSessionId": "sess_a8912c9d-ada9-41a7-a835-042e88af84b0",
+        "timestamp": 1786927551199
+      },
+      {
+        "executionId": "d0087ac9-db5a-4f51-acb9-ebb5fa546b29",
+        "chatSessionId": "sess_a8912c9d-ada9-41a7-a835-042e88af84b0",
+        "timestamp": 1786927815646
+      }
+    ],
+    "14.3 Implement platform settings locations and atomic complete-value storage": [
+      {
+        "executionId": "d0087ac9-db5a-4f51-acb9-ebb5fa546b29",
+        "chatSessionId": "sess_a8912c9d-ada9-41a7-a835-042e88af84b0",
+        "timestamp": 1786927551263
+      }
+    ],
+    "14.4 Write Property 17 test for complete settings updates": [
+      {
+        "executionId": "d0087ac9-db5a-4f51-acb9-ebb5fa546b29",
+        "chatSessionId": "sess_a8912c9d-ada9-41a7-a835-042e88af84b0",
+        "timestamp": 1786927551321
+      }
+    ],
+    "14.5 Add platform integration tests for safe settings I/O": [
+      {
+        "executionId": "d0087ac9-db5a-4f51-acb9-ebb5fa546b29",
+        "chatSessionId": "sess_a8912c9d-ada9-41a7-a835-042e88af84b0",
+        "timestamp": 1786927551374
+      }
+    ],
+    "14.6 Implement the startup folder planner and revision-guarded orchestration": [
+      {
+        "executionId": "d0087ac9-db5a-4f51-acb9-ebb5fa546b29",
+        "chatSessionId": "sess_a8912c9d-ada9-41a7-a835-042e88af84b0",
+        "timestamp": 1786927551428
+      }
+    ],
+    "14.7 Write Property 19 test for startup candidate priority and terminal fallback": [
+      {
+        "executionId": "d0087ac9-db5a-4f51-acb9-ebb5fa546b29",
+        "chatSessionId": "sess_a8912c9d-ada9-41a7-a835-042e88af84b0",
+        "timestamp": 1786927551490
+      }
+    ],
+    "14.8 Write Property 20 test for first-item activation and stale completion rejection": [
+      {
+        "executionId": "d0087ac9-db5a-4f51-acb9-ebb5fa546b29",
+        "chatSessionId": "sess_a8912c9d-ada9-41a7-a835-042e88af84b0",
+        "timestamp": 1786927551536
+      }
+    ],
+    "14.9 Implement configurable deterministic ordering and state-preserving resort": [
+      {
+        "executionId": "d0087ac9-db5a-4f51-acb9-ebb5fa546b29",
+        "chatSessionId": "sess_a8912c9d-ada9-41a7-a835-042e88af84b0",
+        "timestamp": 1786927551573
+      }
+    ],
+    "14.10 Write Property 18 test for deterministic ordering and identity retention": [
+      {
+        "executionId": "d0087ac9-db5a-4f51-acb9-ebb5fa546b29",
+        "chatSessionId": "sess_a8912c9d-ada9-41a7-a835-042e88af84b0",
+        "timestamp": 1786927551640
+      }
+    ],
+    "14.11 Wire startup restoration and sort controls into the desktop host": [
+      {
+        "executionId": "d0087ac9-db5a-4f51-acb9-ebb5fa546b29",
+        "chatSessionId": "sess_a8912c9d-ada9-41a7-a835-042e88af84b0",
+        "timestamp": 1786927551709
+      }
+    ],
+    "14.12 Add desktop and hosted-platform integration coverage": [
+      {
+        "executionId": "d0087ac9-db5a-4f51-acb9-ebb5fa546b29",
+        "chatSessionId": "sess_a8912c9d-ada9-41a7-a835-042e88af84b0",
+        "timestamp": 1786927551755
+      }
+    ],
+    "15. Final startup-restoration checkpoint - Ensure all tests pass": [
+      {
+        "executionId": "d0087ac9-db5a-4f51-acb9-ebb5fa546b29",
+        "chatSessionId": "sess_a8912c9d-ada9-41a7-a835-042e88af84b0",
+        "timestamp": 1786927551802
+      }
     ]
   }
 }

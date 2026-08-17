@@ -49,21 +49,23 @@ The workspace will be organized as these Rust crates/modules; each dependency ve
 
 | Unit | Responsibility | Platform dependence |
 |---|---|---|
-| `image_editor_core` | Domain models, pure command reducer, edit history, collection ordering/filtering, crop validation, capability projection, deterministic transforms, export request planning | None |
+| `image_editor_core` | Domain models, pure command reducer, edit history, collection filtering and configurable deterministic ordering, startup-folder/first-activation planning, settings validation, capability projection, deterministic transforms, export request planning | None |
 | `image_editor_codecs` | `CodecRegistry`, safe image resource limits, portable `image-rs` codecs, optional HEIC adapter | HEIC runtime library/codec plugins only |
-| `image_editor_platform` | `PlatformDialogs`, platform detection, file identity, package/runtime probe implementations | macOS/Linux |
+| `image_editor_platform` | `PlatformDialogs`, platform detection, settings-path/current-directory resolution, atomic settings storage, file identity, package/runtime probe implementations | macOS/Linux |
 | `image_editor_desktop` | eframe startup, egui views, key-event intake, task orchestration, preview texture cache | Native window/graphics APIs through eframe |
 
 `image_editor_core` must never import `egui`, `eframe`, `rfd`, OS APIs, or asynchronous runtime types. Its operations accept values and return a new state plus declarative effects, which makes the command and rendering behavior testable without a display server or installed codec.
 
 ### State ownership and effect flow
 
-1. Startup constructs the codec and platform adapters, probes capabilities, and creates `CapabilitySnapshot` before enabling open-folder or export commands.
-2. The desktop adapter creates exactly one primary window and hands the immutable snapshot to the pure core.
-3. A button or normalized keyboard event becomes one `EditorCommand`. The core validates it synchronously, changes only domain state that it owns, and optionally emits an effect such as `ChooseFolder`, `DecodeCandidate`, or `WriteExport`.
-4. The adapter executes effects on the correct boundary: dialogs on the UI/main thread; file enumeration, decoding, replay, encoding, and disk writes on a bounded worker executor.
-5. Each effect includes a monotonically increasing request/revision token. Completion is applied only if its token still matches the relevant pending request and document revision; stale work cannot replace a newer active image or preview.
-6. Success is committed atomically through a core completion command. Failure becomes a visible `ApplicationError` and preserves the state specified by the requirements.
+1. Startup resolves exactly one settings file location before any settings I/O: macOS `~/Library/Application Support/yampixr/settings.json`; Linux `$XDG_CONFIG_HOME/yampixr/settings.json` only when `XDG_CONFIG_HOME` is absolute, otherwise `~/.config/yampixr/settings.json`. The adapter then performs a 1 MiB-bounded read and the pure settings decoder validates the schema version, sort field/direction, and optional absolute last-folder path. Absence selects defaults without a notice; every other read/validation failure selects `full_file_name/ascending` and emits a safe settings diagnostic.
+2. The process captures `StartupWorkingDirectory` once. The pure startup planner attempts an accessible, enumerable persisted `LastSuccessfulSourceFolder` first, then the captured startup working directory. Each failed candidate emits a safe diagnostic and advances exactly once; failure to obtain the working directory, or exhaustion of both candidates, commits an operable empty workspace.
+3. Every startup enumeration carries a monotonically increasing `StartupRequestRevision`; a successful enumeration creates a new `CollectionRevision`, applies `EffectiveSortSettings`, and atomically installs that source folder and ordered collection only when both revisions match the current pending startup request. An empty collection emits no decode effect. A nonempty collection emits exactly one `StartupActivationPlan` for the first sorted entry; decode success atomically activates and displays that entry, while decode failure leaves no startup-selected active image and never advances automatically to a later entry.
+4. The desktop adapter creates exactly one primary window and hands the immutable capability snapshot plus validated effective settings to the pure core.
+5. A button or normalized keyboard event becomes one `EditorCommand`. The core validates it synchronously, changes only domain state that it owns, and optionally emits an effect such as `ChooseFolder`, `DecodeCandidate`, `PersistSettings`, or `WriteExport`.
+6. The adapter executes effects on the correct boundary: dialogs on the UI/main thread; settings I/O, file enumeration, decoding, replay, encoding, and disk writes on a bounded worker executor.
+7. Each effect includes a monotonically increasing request/revision token. Completion is applied only if its token still matches the relevant pending request and collection/document revision; stale startup enumeration or first-decode work cannot replace a user-opened folder, changed ordering, newer active image, or preview.
+8. Success is committed atomically through a core completion command. Failure becomes a visible `ApplicationError` or safe startup/settings diagnostic and preserves the state specified by the requirements.
 
 The core uses a reducer style rather than mutating UI callbacks directly. This is the mechanism that ensures a failed decode, unavailable feature, boundary navigation, or invalid crop cannot partially update `Browsing_State`.
 
@@ -132,7 +134,7 @@ pub enum EditOperation {
 }
 ```
 
-`ImageCollection` stores only supported, directly contained regular files. It is ordered by the UTF-8 byte sequence of the complete filename and, for equal filenames, the UTF-8 byte sequence of the complete local path. Discovery takes an injected directory listing so ordering can be tested independently of the operating system. Directories, descendant files, and files whose extension is not one of the defined candidate extensions are never collection entries. HEIC candidates whose decoder capability is false remain visible as availability notices rather than selectable collection entries, as required.
+`ImageCollection` stores only supported, directly contained regular files and the metadata needed by the selected sort field. Collection planning accepts `EffectiveSortSettings`: `FullFileName`, `ModifiedTime`, or `FileSize`, together with `Ascending` or `Descending`. It compares the selected available field in the requested direction; entries missing selected metadata sort after entries with metadata. Every primary-field tie, including missing metadata, is broken by complete filename UTF-8 bytes ascending and then complete local-path UTF-8 bytes ascending, independent of requested direction. Discovery takes an injected directory listing and sort settings so membership and every ordering mode can be tested independently of the operating system. Directories, descendant files, and files whose extension is not one of the defined candidate extensions are never collection entries. HEIC candidates whose decoder capability is false remain visible as availability notices rather than selectable collection entries, as required.
 
 `ImageId` is a stable source identity for this open session, composed of the absolute path plus platform file identity metadata where available. It keeps individual history and redo stacks separate even when two files have identical names. Every generated filename/path used for the requirement-defined ordering must be UTF-8; a filename that cannot be represented is reported as an availability/error notice and is not incorrectly sorted by a lossy replacement representation.
 
@@ -270,8 +272,9 @@ pub enum Availability {
 }
 
 pub struct ImageCollection {
-    pub entries: Vec<CollectionEntry>, // sorted and immutable until next folder success
+    pub entries: Vec<CollectionEntry>, // ordered by EffectiveSortSettings
     pub unavailable: Vec<UnavailableImage>,
+    pub revision: CollectionRevision,
 }
 
 pub struct CollectionEntry {
@@ -279,6 +282,33 @@ pub struct CollectionEntry {
     pub absolute_path: AbsolutePath,
     pub file_name: Utf8FileName,
     pub format: ImageFormat,
+    pub modified_time: Option<PortableTimestamp>,
+    pub file_size: Option<u64>,
+}
+
+pub struct AppSettings {
+    pub version: u16,
+    pub sort: SortSettings,
+    pub last_successful_source_folder: Option<AbsolutePath>,
+}
+
+pub struct SortSettings {
+    pub field: SortField,
+    pub direction: SortDirection,
+}
+
+pub enum SortField { FullFileName, ModifiedTime, FileSize }
+pub enum SortDirection { Ascending, Descending }
+
+pub struct StartupPlan {
+    pub candidates: Vec<StartupFolderCandidate>,
+    pub effective_sort: SortSettings,
+}
+
+pub struct StartupActivationPlan {
+    pub candidate: ImageId,
+    pub enumeration_request: RequestId,
+    pub collection_revision: CollectionRevision,
 }
 
 pub struct CropRect {
@@ -313,6 +343,38 @@ Core constructors keep the following invariants:
 - `VisibleNotice` has a severity (`Availability`, `Error`, `Info`), stable subject (filename/path/capability), and user-safe message. It never exposes stack traces or untrusted raw file content.
 
 Resource limits are part of `DecodeLimits`: maximum input bytes, dimensions, total pixels, and intermediate allocation. Exceeding them is a decode failure with no browsing-state update. Every multiplication/addition used for buffer dimensions is checked before allocation.
+
+### Settings storage, startup restoration, and deterministic sorting
+
+`AppSettingsStore` is the only component allowed to read or replace the versioned settings file. Platform path resolution occurs before construction of the store and returns either one absolute location or a typed startup diagnostic. Reads open at most one file, reject a reported size above 1 MiB, stream at most 1 MiB plus one sentinel byte to detect metadata races, decode UTF-8 JSON only when no overflow sentinel is present, reject trailing/malformed data and unsupported versions, and validate every field before returning `Valid(AppSettings)`. A missing file returns `Absent`; unreadable, oversized, malformed, unsupported, or semantically invalid files return `Invalid(SettingsDiagnostic)`. Raw settings text, environment values, and temporary-file contents never enter notices.
+
+```rust
+pub trait AppSettingsStore {
+    fn load(&self, location: &SettingsStorageLocation) -> SettingsLoadOutcome;
+    fn replace(&self, location: &SettingsStorageLocation, value: &AppSettings)
+        -> Result<(), SettingsWriteError>;
+}
+
+pub enum SettingsLoadOutcome {
+    Absent,
+    Valid(AppSettings),
+    Invalid(SettingsDiagnostic),
+}
+
+pub struct StartupState {
+    pub request_revision: StartupRequestRevision,
+    pub pending_candidate: Option<StartupFolderCandidate>,
+    pub attempted_persisted_folder: bool,
+    pub attempted_working_directory: bool,
+    pub activation: Option<StartupActivationPlan>,
+}
+```
+
+Writes serialize the complete settings value to canonical JSON, create a uniquely named sibling temporary file with create-new semantics, write and flush all bytes, sync the file, then atomically rename the sibling over `settings.json` on the same filesystem. The adapter creates the parent application directory when absent and syncs the parent directory after replacement where the platform supports that operation. A failure before replacement removes only the attempt-created temporary file; a failure never truncates the last complete settings file. The reducer keeps a newly selected sort setting effective for the current session even if persistence fails. A successfully enumerated user-selected folder updates only `last_successful_source_folder`, preserving the effective sort setting in the complete replacement value.
+
+`StartupFolderPlanner` is a pure state machine. It receives validated settings, the captured startup working-directory result, and typed metadata/enumeration completions. Candidate order is fixed: persisted folder, then startup working directory. Duplicate paths are attempted only once. Every enumeration request and completion carries `StartupRequestRevision`; every first-image decode additionally carries `CollectionRevision`. A completion with either stale token is discarded before any state field, notice, history, preview, or view state is changed. User-initiated folder selection supersedes and increments the pending startup revision.
+
+`EffectiveImageOrder` uses one total comparator. For `full_file_name`, it compares complete filename UTF-8 bytes in the selected direction. For `modified_time` and `file_size`, entries with values precede missing values regardless of direction, present values compare in the selected direction, and missing values tie. Every primary tie is resolved by complete filename UTF-8 bytes ascending and then complete absolute-path UTF-8 bytes ascending, independent of sort direction. The same comparator is used for startup enumeration, user-opened folders, and in-session resorting. Resorting changes only collection order; `ImageId` retains the active document, histories, redo stacks, drafts, preview revision, and view state.
 
 ## Correctness Properties
 
@@ -402,6 +464,9 @@ pub enum ApplicationError {
     ExportWrite { path: AbsolutePath, cause: SafeError },
     PlatformOperation { capability: CapabilityName, cause: SafeError },
     FontInitialization { resource: PackageResourcePath, cause: SafeError },
+    SettingsRead { category: SettingsDiagnosticKind },
+    SettingsWrite { location: SettingsStorageLocation, cause: SafeError },
+    StartupDirectory { candidate: StartupCandidateKind, cause: SafeError },
     ResourceLimit { subject: Utf8FileName, limit: ResourceLimitKind },
 }
 ```
@@ -438,11 +503,12 @@ The app does not auto-install packages, prompt the user to install dependencies 
 | Layer | Scope | Tools/approach |
 |---|---|---|
 | Core unit tests | Exact mappings, representative state transitions, error messages, resource limits | Rust `cargo test` |
-| Property tests | The 15 properties above against pure core/adapters | `proptest`, at least 100 cases/property |
+| Property tests | All 20 numbered design properties against pure core/adapters | `proptest`, at least 100 cases/property |
 | Codec integration tests | Real fixture decode/encode, malformed files, PNG/TIFF equivalence, JPEG/HEIC tolerance | Temp directories and fixed fixtures; optional HEIC suite gated by detected capability |
 | Desktop integration tests | One-window startup, visible controls, keyboard routing once, crop overlay coordinate conversion | eframe test harness / accessibility tree where supported |
 | Font configuration tests | Bundled font discovery, required glyph coverage, `egui::FontDefinitions` priority/fallback construction, and registration failures | Pure unit tests with packaged-fixture bytes and injected resource/registration failures |
-| Platform integration tests | rfd folder/save dialogs, actual filesystem identity/no-overwrite behavior, capability probe changes | macOS and Linux CI runners; use manual/guarded tests where portal interaction cannot be automated |
+| Platform integration tests | rfd folder/save dialogs, actual filesystem identity/no-overwrite behavior, exact settings paths, bounded settings reads, and atomic replacement | macOS and Linux CI runners; injected filesystem failures; use manual/guarded tests where portal interaction cannot be automated |
+| Startup desktop integration tests | Persisted-folder/cwd priority, empty workspace, first-image activation/failure, stale completion rejection, and sort controls | Deterministic fake platform/worker adapters plus focused hosted-platform cases |
 | Packaging smoke tests | Install/start package, capability message with missing optional runtime dependency | Per-target package installation image/VM |
 | Visual regression tests | Workspace layout, disabled-control messaging, macOS/Linux shortcut labels | Deterministic screenshot snapshots per platform |
 
@@ -464,6 +530,9 @@ Each numbered design property is implemented by one property-based test function
 - Generate shortcut intents rather than native key events; run them through both platform key tables and compare semantic commands.
 - Generate capability truth tables (decode/encode/dialog) and verify enabled controls/export formats against a small declarative requirement matrix.
 - Generate conformance operation sequences once and execute the same core build/test binary in macOS and Linux CI, then compare serialized deterministic result hashes and PNG/TIFF sample data as artifacts.
+- Generate valid AppSettings values plus absent, oversized, malformed, unsupported-version, and semantically invalid byte streams; use canonical JSON encode/decode equivalence and the default/diagnostic matrix as the oracle.
+- Generate collection entries with duplicate primary values, missing metadata, and permuted input order; compare all six sort modes against a simple reference total comparator and assert ImageId-associated state survives resorting.
+- Generate persisted-folder/working-directory availability and enumeration outcome trees plus matching/stale request and collection revisions; compare startup effects and committed state against a compact priority state-machine model.
 
 ### Example, edge, integration, and smoke coverage by requirement
 
@@ -483,6 +552,7 @@ The following testability classification covers every acceptance criterion. `P` 
 | 10 | 10.1–10.2 P10 + cross-platform I; 10.3–10.4 P8; 10.5 S/I (shared capabilities available on both targets). |
 | 11 | 11.1 S (package manifests/dependency documentation); 11.2–11.3 P9 + S/I (degraded/available operation projection); 11.4–11.5 I (actual platform choosers); 11.6–11.7 S/I (package font resource/license metadata and unreadable-resource startup failure). |
 | 12 | 12.1 P13 + I (ordered source discovery and partial overrides); 12.2 P12 + E (multi-binding parser/formatter round trip); 12.3 E (default-table fixture); 12.4–12.5 P13/P14 + E (read, parse, validation, collision diagnostics, and fallback); 12.6–12.9 P15 + E (fit, zoom, pan, and navigation aliases); 12.10 I (full-screen request and failure retention); 12.11–12.12 P14 + E/visual regression (effective labels, help groups, and text focus); 12.13 E (no-active view/navigation no-op). |
+| 13 | 13.1 I (exact macOS/Linux settings-path resolution); 13.2–13.4 P16 + E/X (valid round trip, absent/default, bounded malformed/oversized/version fallback); 13.5–13.7 P17 + I (complete-value update, atomic replacement, failure preservation, selected-folder persistence); 13.8–13.12 P19 + E/I (candidate priority, metadata/enumeration failure fallback, cwd failure empty workspace); 13.13 P18 + E (startup ordering); 13.14–13.16 P20 + E/I (single first-item activation, success/failure transaction, no skip); 13.17 P19 + E (empty collection); 13.18 P20 + E (stale completion discard); 13.19–13.21 P18 + E (state-preserving resort, deterministic ties, missing metadata last). |
 
 ### CI matrix and acceptance gates
 
@@ -490,12 +560,14 @@ CI will run a pinned Rust toolchain on `aarch64-apple-darwin` and `x86_64-unknow
 
 Required gates before release:
 
-1. Formatting, clippy, core unit tests, and all 15 property tests pass with at least 100 generated cases each on both platforms.
+1. Formatting, clippy, core unit tests, and all 20 property tests pass with at least 100 generated cases each on both platforms.
 2. Cross-platform conformance fixtures produce equal deterministic pipeline artifacts on both platforms.
 3. PNG/TIFF export-reopen tests verify exact width, height, and RGBA samples. JPEG/HEIC tests verify dimensions, orientation/crop semantics, and successful decode rather than exact lossy samples.
 4. macOS and Linux packaging smoke tests start exactly one window with optional HEIC and dialog dependencies both present and intentionally absent.
 5. Integration tests demonstrate that source files and existing target files remain byte-identical after every rejected or failed export path.
 6. Font configuration unit tests verify required glyph coverage and `egui::FontDefinitions` priority/fallback setup; headless or visual-regression tests render Chinese UI text, a Chinese filename, and a Chinese notice without missing-glyph boxes; macOS and Linux package smoke tests verify the packaged font resource is present, readable, license-recorded, and permits startup.
+7. Platform integration tests verify exact macOS/Linux settings locations, the 1 MiB read boundary, complete-value sibling-temp flush and atomic replacement, and preservation of the last complete file under injected failures.
+8. Core and desktop startup suites verify persisted-folder priority, working-directory fallback and acquisition failure, empty collections, first-image success/failure without skip, in-session state-preserving resort, and rejection of stale enumeration/decode completions.
 
 ## Packaging and Distribution Considerations
 
@@ -649,9 +721,50 @@ For any nonzero image size, Preview size, initial ViewState, and sequence of zoo
 
 **Validates: Requirements 12.6, 12.8, 12.9**
 
+### Property 16: Settings decoding is bounded, round-trippable, and fail-safe
+
+For any valid AppSettings value, canonical JSON encoding followed by bounded decoding shall produce an equivalent version, sort setting, and optional last-successful folder; for any absent input the effective sort shall be `full_file_name/ascending` without a diagnostic, and for any oversized, malformed, unsupported-version, or semantically invalid input the effective sort shall be `full_file_name/ascending` with exactly one safe diagnostic category.
+
+**Validates: Requirements 13.2, 13.3, 13.4**
+
+### Property 17: Settings updates preserve unrelated values
+
+For any valid AppSettings value and any valid new SortSettings or successfully enumerated selected folder, producing the complete replacement settings value shall change only the requested field, preserve every unrelated field, and retain the selected in-session sort value when persistence reports failure.
+
+**Validates: Requirements 13.5, 13.6, 13.7**
+
+### Property 18: Effective image ordering is total, deterministic, and identity-preserving
+
+For any finite collection of supported images and any valid SortSettings, sorting shall compare the selected available field in the requested direction, place missing modified-time or file-size values after present values, break every primary tie by filename UTF-8 bytes and then absolute-path UTF-8 bytes ascending, and produce the same order for every input permutation; applying that order to an existing collection shall preserve active image, per-image histories, redo stacks, drafts, preview, and view state by ImageId.
+
+**Validates: Requirements 13.13, 13.19, 13.20, 13.21**
+
+### Property 19: Startup candidate planning follows priority and terminates safely
+
+For any optional last-successful folder, startup-working-directory result, and sequence of accessibility or enumeration outcomes, startup planning shall attempt each distinct candidate at most once in persisted-folder-then-working-directory order, select the first successfully enumerated candidate, and otherwise terminate in an operable empty workspace; any successful empty collection shall emit no startup activation plan.
+
+**Validates: Requirements 13.8, 13.9, 13.10, 13.11, 13.12, 13.17**
+
+### Property 20: Startup activation is first-item atomic and revision-safe
+
+For any ordered nonempty startup collection, the planner shall emit exactly one activation plan for the first item; a matching successful decode shall atomically activate and preview only that item, a matching decode failure shall retain no startup-selected active image and emit no later automatic decode, and any enumeration or activation completion with a stale startup-request or collection revision shall leave all editor state unchanged.
+
+**Validates: Requirements 13.14, 13.15, 13.16, 13.18**
+
 ### Error handling additions
 
-| Condition | UI behavior | Effective behavior |
+| Settings/startup condition | UI behavior | Effective behavior |
+|---|---|---|
+| Settings file absent | No settings error notice | Use `full_file_name/ascending`; continue startup candidate planning |
+| Settings unreadable, over 1 MiB, malformed, unsupported, or invalid | Safe non-modal settings diagnostic names only the failure category | Ignore the complete file; use defaults; continue startup |
+| Atomic settings replacement fails | Safe non-modal persistence diagnostic | Keep selected sort/folder state for the session and preserve the last complete file |
+| Persisted folder missing, inaccessible, not a directory, or not enumerable | Startup directory diagnostic identifies persisted-folder category | Attempt captured startup working directory exactly once |
+| Startup working directory unavailable or cannot be enumerated | Startup directory diagnostic | Present operable empty workspace; retain capability-aware open-folder behavior |
+| Startup directory is valid but contains no supported images | Empty-collection message | Emit no activation decode |
+| First sorted startup image cannot decode | Error names the candidate filename | Keep collection, leave startup active image unset, and do not skip to another image |
+| Startup completion has stale request/collection revision | No user-visible state regression | Discard completion without changing editor, preview, history, or view state |
+
+| Keybinding condition | UI behavior | Effective behavior |
 |---|---|---|
 | Explicit CLI file cannot be read or TOML is invalid | Notice identifies layer/path and safe reason | Continue with project, user, and built-in candidates |
 | Optional project/user file is absent | No error notice | Continue to the next layer |
@@ -662,3 +775,8 @@ For any nonzero image size, Preview size, initial ViewState, and sequence of zoo
 ### Testing strategy additions
 
 Use pinned `toml` and `serde` crates for parsing/formatting rather than a custom TOML grammar. Add one `proptest` function per Properties 12–15 with at least 100 cases and the existing traceability comment format. Unit tests cover known default tables, macOS/Linux label spellings, malformed TOML line/column diagnostics, invalid modifiers, explicit CLI read failures, and exact 100%/200%/fit calculations. Desktop tests verify that toolbar buttons and the command palette display the effective bindings in the four groups 浏览、缩放与视图、编辑、文件; focus an editable text widget and assert configured printable shortcuts do not execute; mock the full-screen adapter on both platforms; and verify no-active, collection-boundary, and unzoomed-pan cases are no-ops. Hosted macOS/Linux integration tests validate user-path selection, CLI/project/user/built-in precedence, and F11 versus Control+Command+F full-screen variants.
+### Startup restoration testing additions
+
+Add one `proptest` function for each of Properties 16–20, with at least 100 cases and the existing traceability-comment format. Property 16 uses valid settings plus absent, malformed, oversized, unsupported-version, and invalid-semantic byte streams; Property 17 exercises complete-value update reducers and injected persistence outcomes; Property 18 compares every sort mode and input permutation to a simple reference comparator; Properties 19–20 compare planner effects and committed state to a compact startup state-machine model with matching and stale revisions.
+
+Example and integration tests remain necessary around side effects. Core examples cover exact defaults, empty collections, first-image decode failure without skip, and state preservation after resorting. Platform tests cover exact macOS/Linux locations, XDG fallback, the 1 MiB-plus-sentinel read bound, sibling temporary creation, flush/sync/atomic replacement, and injected failure preservation. Desktop tests use deterministic fake workers for persisted-folder priority, working-directory fallback/acquisition failure, superseding user actions, and stale enumeration/decode completion rejection; hosted macOS/Linux cases verify the real path and filesystem adapters.

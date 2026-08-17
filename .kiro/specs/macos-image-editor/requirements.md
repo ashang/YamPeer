@@ -24,14 +24,16 @@ Image Editor 是一款面向 macOS 和 Linux 用户的桌面图片浏览与基�
 - **Startup_Working_Directory**：Image_Editor 在本次进程启动期间获取到的初始工作目录绝对路径；后续进程工作目录变化不改变该值。
 - **Startup_Folder_Planner**：按 Last_Successful_Source_Folder、Startup_Working_Directory 的优先级依次验证候选目录并产生启动枚举请求的 Image_Editor 组件。
 - **Platform_Adapter**：解析平台设置存储位置、获取 Startup_Working_Directory、读取目录元数据并提供平台文件与窗口集成的边界组件。
-- **Settings_Storage_Location**：由 Platform_Adapter 解析的单个 App_Settings 文件路径；macOS 使用用户 Application Support 目录，Linux 使用 `$XDG_CONFIG_HOME` 或其平台默认配置目录。
+- **Settings_Storage_Location**：由 Platform_Adapter 解析的单个 `settings.json` 文件路径；macOS 为用户主目录下 `Library/Application Support/yampixr/settings.json`，Linux 为 `$XDG_CONFIG_HOME/yampixr/settings.json`，当 `$XDG_CONFIG_HOME` 未设置或不是绝对路径时为用户主目录下 `.config/yampixr/settings.json`。
+- **App_Settings_Size_Limit**：App_Settings_Store 单次读取接受的最大文件字节数，固定为 1 MiB；超过该限制的文件视为无效 App_Settings。
+- **Settings_Diagnostic**：标识 App_Settings 读取、验证或持久化失败类别的非阻塞安全提示；提示不包含设置文件原始内容、堆栈跟踪、敏感环境值或临时文件内容。
 - **Sort_Field**：用于排列 Image_Collection 的字段，取值为完整文件名 `full_file_name`、最后修改时间 `modified_time` 或文件字节数 `file_size`。
 - **Sort_Direction**：用于排列 Image_Collection 的方向，取值为升序 `ascending` 或降序 `descending`。
 - **Sort_Settings**：由一个 Sort_Field 和一个 Sort_Direction 组成的有效排序配置；默认值为 `full_file_name` 与 `ascending`。
 - **App_Settings**：Image_Editor 跨启动保存的版本化设置值，包含 Sort_Settings 和可选 Last_Successful_Source_Folder。
 - **App_Settings_Store**：在 Settings_Storage_Location 对 App_Settings 执行有界读取、验证和原子替换写入的组件。
 - **Effective_Sort_Settings**：启动时从有效 App_Settings 读取的 Sort_Settings；App_Settings 缺失、不可读或无效时为默认 Sort_Settings。
-- **Effective_Image_Order**：先按 Effective_Sort_Settings 的 Sort_Field 和 Sort_Direction比较 Direct_Folder_File；当主字段相等时，无论 Sort_Direction 为何，均按完整文件名 UTF-8 字节序升序、再按完整本地路径 UTF-8 字节序升序打破平局；`modified_time` 或 `file_size` 元数据缺失的条目排在具有该元数据的条目之后，并使用相同平局规则。
+- **Effective_Image_Order**：先按 Effective_Sort_Settings 的 Sort_Field 和 Sort_Direction 比较 Direct_Folder_File；当主字段相等时，无论 Sort_Direction 为何，均按完整文件名 UTF-8 字节序升序、再按完整本地路径 UTF-8 字节序升序打破平局；`modified_time` 或 `file_size` 元数据缺失的条目排在具有该元数据的条目之后，并使用相同平局规则。
 - **Startup_Directory_Candidate**：Startup_Folder_Planner 当前验证或请求枚举的 Last_Successful_Source_Folder 或 Startup_Working_Directory。
 - **Startup_Directory_Diagnostic**：标识 Startup_Directory_Candidate 类别和安全失败原因的非阻塞提示；提示不包含设置原始内容、堆栈跟踪或敏感环境值。
 - **Startup_Activation_Plan**：启动目录成功产生非空 Image_Collection 后，针对 Effective_Image_Order 第一项生成的唯一自动解码计划；该计划带有对应目录枚举请求和集合修订的 revision token。
@@ -99,7 +101,7 @@ Image Editor 是一款面向 macOS 和 Linux 用户的桌面图片浏览与基�
 #### Acceptance Criteria
 
 1. WHERE the Platform_Integration_Capability for selecting a local folder is available, WHEN a user invokes the open-folder action, THE Image_Editor SHALL present a Platform_File_Chooser configured to select one local folder.
-2. WHEN a user selects a Source_Folder, THE Image_Editor SHALL enumerate every Direct_Folder_File, select every Supported_Image, and create the Image_Collection in Image_Collection order.
+2. WHEN a user selects a Source_Folder, THE Image_Editor SHALL enumerate every Direct_Folder_File, select every Supported_Image, and create the Image_Collection in Effective_Image_Order.
 3. IF Image_Editor cannot enumerate a selected Source_Folder, THEN THE Image_Editor SHALL display an Application_Error that identifies the selected Source_Folder and retain the prior Browsing_State.
 4. WHEN Image_Editor creates an Image_Collection, THE Image_Editor SHALL display every Supported_Image in the Image_Collection as a selectable entry containing the Supported_Image file name.
 5. WHEN a user selects a Supported_Image entry, THE Image_Editor SHALL decode the selected Supported_Image before setting the selected Supported_Image as the Active_Image.
@@ -112,14 +114,14 @@ Image Editor 是一款面向 macOS 和 Linux 用户的桌面图片浏览与基�
 
 #### Acceptance Criteria
 
-1. WHEN a user presses the Right Arrow Platform_Keyboard_Command and the Active_Image has a following item in Image_Collection order, THE Image_Editor SHALL decode the following item before setting the following item as the Active_Image.
-2. WHEN Image_Editor successfully decodes the following item in Image_Collection order, THE Image_Editor SHALL set the following item as the Active_Image and display the Active_Image in the Preview.
-3. WHEN a user presses the Left Arrow Platform_Keyboard_Command and the Active_Image has a preceding item in Image_Collection order, THE Image_Editor SHALL decode the preceding item before setting the preceding item as the Active_Image.
-4. WHEN Image_Editor successfully decodes the preceding item in Image_Collection order, THE Image_Editor SHALL set the preceding item as the Active_Image and display the Active_Image in the Preview.
-5. WHEN a user presses the Home Platform_Keyboard_Command and the Image_Collection contains at least one Supported_Image, THE Image_Editor SHALL decode the first item in Image_Collection order before setting the first item as the Active_Image.
-6. WHEN Image_Editor successfully decodes the first item in Image_Collection order, THE Image_Editor SHALL set the first item as the Active_Image and display the Active_Image in the Preview.
-7. WHEN a user presses the End Platform_Keyboard_Command and the Image_Collection contains at least one Supported_Image, THE Image_Editor SHALL decode the last item in Image_Collection order before setting the last item as the Active_Image.
-8. WHEN Image_Editor successfully decodes the last item in Image_Collection order, THE Image_Editor SHALL set the last item as the Active_Image and display the Active_Image in the Preview.
+1. WHEN a user presses the Right Arrow Platform_Keyboard_Command and the Active_Image has a following item in Effective_Image_Order, THE Image_Editor SHALL decode the following item before setting the following item as the Active_Image.
+2. WHEN Image_Editor successfully decodes the following item in Effective_Image_Order, THE Image_Editor SHALL set the following item as the Active_Image and display the Active_Image in the Preview.
+3. WHEN a user presses the Left Arrow Platform_Keyboard_Command and the Active_Image has a preceding item in Effective_Image_Order, THE Image_Editor SHALL decode the preceding item before setting the preceding item as the Active_Image.
+4. WHEN Image_Editor successfully decodes the preceding item in Effective_Image_Order, THE Image_Editor SHALL set the preceding item as the Active_Image and display the Active_Image in the Preview.
+5. WHEN a user presses the Home Platform_Keyboard_Command and the Image_Collection contains at least one Supported_Image, THE Image_Editor SHALL decode the first item in Effective_Image_Order before setting the first item as the Active_Image.
+6. WHEN Image_Editor successfully decodes the first item in Effective_Image_Order, THE Image_Editor SHALL set the first item as the Active_Image and display the Active_Image in the Preview.
+7. WHEN a user presses the End Platform_Keyboard_Command and the Image_Collection contains at least one Supported_Image, THE Image_Editor SHALL decode the last item in Effective_Image_Order before setting the last item as the Active_Image.
+8. WHEN Image_Editor successfully decodes the last item in Effective_Image_Order, THE Image_Editor SHALL set the last item as the Active_Image and display the Active_Image in the Preview.
 9. IF Image_Editor cannot decode a navigation candidate, THEN THE Image_Editor SHALL display an Application_Error that identifies the navigation candidate file name and retain the prior Browsing_State.
 10. WHEN a user presses the Right Arrow Platform_Keyboard_Command and the Active_Image is the last item in the Image_Collection, THE Image_Editor SHALL retain the prior Browsing_State.
 11. WHEN a user presses the Left Arrow Platform_Keyboard_Command and the Active_Image is the first item in the Image_Collection, THE Image_Editor SHALL retain the prior Browsing_State.
@@ -276,3 +278,31 @@ Image Editor 是一款面向 macOS 和 Linux 用户的桌面图片浏览与基�
 11. WHEN Image_Editor displays a command control or shortcut-help entry, THE Image_Editor SHALL display every Keybinding_Gesture assigned by the Effective_Keybinding_Map using macOS Command and Option labels on macOS or Linux Control and Alt labels on Linux, and SHALL group shortcut-help entries as 浏览, 缩放与视图, 编辑, and 文件.
 12. WHILE Text_Input_Focus exists, WHEN Image_Editor receives a Keybinding_Gesture marked as consumed by the focused text control, THE Image_Editor SHALL retain the Browsing_State, View_State, Edit_History, and Redo_History and allow the focused text control to process the Keybinding_Gesture.
 13. WHILE no Active_Image exists, WHEN a user invokes any configured zoom, pan, or browsing Keybinding_Gesture, THE Image_Editor SHALL retain the Browsing_State and View_State.
+
+### Requirement 13: Restore a Startup Folder and Persist Deterministic Sorting
+
+**User Story:** As a returning desktop user, I want the editor to restore a usable folder and my sorting preference at startup, so that I can continue browsing predictably without reopening and reordering the folder manually.
+
+#### Acceptance Criteria
+
+1. WHEN Image_Editor starts on a Supported_Platform, THE Platform_Adapter SHALL resolve exactly one Settings_Storage_Location according to the platform path rules before App_Settings_Store reads or writes App_Settings.
+2. WHEN App_Settings_Store reads a present, readable, supported-version App_Settings value no larger than App_Settings_Size_Limit and containing a valid Sort_Settings value, THE Image_Editor SHALL use that Sort_Settings value as Effective_Sort_Settings for the application session.
+3. IF App_Settings is unreadable, exceeds App_Settings_Size_Limit, has an unsupported version, contains malformed data, or contains an invalid Sort_Settings value, THEN THE Image_Editor SHALL read no more than App_Settings_Size_Limit plus one sentinel byte, use the default Sort_Settings as Effective_Sort_Settings, display a Settings_Diagnostic for the failure category, and continue startup.
+4. WHEN App_Settings is absent, THE Image_Editor SHALL use the default Sort_Settings as Effective_Sort_Settings and continue startup without displaying a Settings_Diagnostic.
+5. WHEN a user changes Sort_Settings, THE App_Settings_Store SHALL persist the complete updated App_Settings by writing a sibling temporary file, flushing the file contents, and atomically replacing the prior settings file at Settings_Storage_Location.
+6. IF App_Settings_Store cannot persist updated Sort_Settings, THEN THE Image_Editor SHALL retain the user-selected Sort_Settings as Effective_Sort_Settings for the current session, preserve the last complete settings file, and display a Settings_Diagnostic.
+7. WHEN Image_Editor successfully enumerates a Source_Folder selected through the open-folder action, THE App_Settings_Store SHALL atomically persist the Source_Folder absolute path as Last_Successful_Source_Folder without changing the current Effective_Sort_Settings.
+8. WHEN Image_Editor starts with a Last_Successful_Source_Folder that is an accessible directory and can be enumerated, THE Startup_Folder_Planner SHALL select Last_Successful_Source_Folder as the Source_Folder before considering Startup_Working_Directory.
+9. IF Last_Successful_Source_Folder is inaccessible, is not a directory, or cannot be enumerated, THEN THE Startup_Folder_Planner SHALL display a Startup_Directory_Diagnostic and attempt Startup_Working_Directory as the next Startup_Directory_Candidate.
+10. WHEN Image_Editor starts without a Last_Successful_Source_Folder and obtains Startup_Working_Directory, THE Startup_Folder_Planner SHALL attempt Startup_Working_Directory as the Startup_Directory_Candidate.
+11. IF Platform_Adapter cannot obtain Startup_Working_Directory, THEN THE Image_Editor SHALL display a Startup_Directory_Diagnostic and present an operable empty Primary_Main_Window with open-folder behavior determined by Platform_Integration_Capability.
+12. IF Startup_Working_Directory is inaccessible, is not a directory, or cannot be enumerated after Last_Successful_Source_Folder is unavailable or unsuccessful, THEN THE Image_Editor SHALL display a Startup_Directory_Diagnostic and present an operable empty Primary_Main_Window with open-folder behavior determined by Platform_Integration_Capability.
+13. WHEN Image_Editor successfully enumerates a Startup_Directory_Candidate, THE Image_Editor SHALL create the Image_Collection by ordering every discovered Supported_Image according to Effective_Image_Order.
+14. WHEN a successfully enumerated Startup_Directory_Candidate produces an Image_Collection containing at least one Supported_Image, THE Startup_Folder_Planner SHALL issue exactly one Startup_Activation_Plan for the first item in Effective_Image_Order.
+15. WHEN Image_Editor successfully decodes the candidate referenced by the current Startup_Activation_Plan, THE Image_Editor SHALL atomically set that candidate as Active_Image and display the decoded image in Preview.
+16. IF Image_Editor cannot decode the candidate referenced by the current Startup_Activation_Plan, THEN THE Image_Editor SHALL retain the candidate in Image_Collection, retain a state with no startup-selected Active_Image, display an Application_Error identifying the candidate file name, and issue no automatic decode request for a later Image_Collection item.
+17. WHEN a successfully enumerated Startup_Directory_Candidate produces an empty Image_Collection, THE Image_Editor SHALL issue no Startup_Activation_Plan and display the empty-collection message in Preview.
+18. WHEN Image_Editor receives a startup enumeration completion with a nonmatching startup request revision or a Startup_Activation_Plan completion with a nonmatching startup request revision or collection revision, THE Image_Editor SHALL discard the completion without changing Browsing_State, View_State, Edit_History, Redo_History, or Preview.
+19. WHEN a user changes Effective_Sort_Settings while an Image_Collection exists, THE Image_Editor SHALL reorder Image_Collection according to Effective_Image_Order while retaining Active_Image, per-image Edit_History, per-image Redo_History, Preview, and View_State by ImageId.
+20. WHEN two Supported_Image values have equal available values for the selected Sort_Field, THE Image_Editor SHALL order the Supported_Image values by complete file name UTF-8 bytes and then complete local path UTF-8 bytes in ascending order.
+21. WHEN `modified_time` or `file_size` is the selected Sort_Field and a Supported_Image lacks the selected metadata value, THE Image_Editor SHALL place that Supported_Image after every Supported_Image having the selected metadata value and apply the Effective_Image_Order tie-breaker among missing-value entries.

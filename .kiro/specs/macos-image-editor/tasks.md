@@ -243,10 +243,67 @@ Implement the application as a Rust workspace with a platform-independent `image
 - [x] 13. Final configurable-keybinding checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
+- [ ] 14. Restore startup folders and persist deterministic sorting
+  - [x] 14.1 Implement versioned settings values and bounded decoding in the pure core
+    - Add the versioned `AppSettings`, `SortSettings`, load outcome, validation error, and safe diagnostic contracts; implement canonical JSON encode/decode with a 1 MiB limit plus one bounded overflow-detection sentinel byte.
+    - Distinguish absent settings from unreadable, oversized, malformed, unsupported-version, and invalid-sort inputs; select `full_file_name/ascending` for every fallback without exposing raw settings content.
+    - _Requirements: 13.2-13.4_
+  - [-] 14.2 Write Property 16 test for bounded settings round trips and fallback
+    - **Property 16: Settings decoding is bounded, round-trippable, and fail-safe.**
+    - Generate valid settings and absent/oversized/malformed/unsupported/invalid inputs; run at least 100 cases and verify equivalent round trips plus the default/diagnostic matrix.
+    - **Validates: Requirements 13.2-13.4.**
+  - [~] 14.3 Implement platform settings locations and atomic complete-value storage
+    - Resolve macOS `~/Library/Application Support/yampixr/settings.json` and Linux absolute `$XDG_CONFIG_HOME/yampixr/settings.json` or `~/.config/yampixr/settings.json` before I/O.
+    - Implement bounded reads and sibling create-new temporary writes, complete serialization, flush/sync, same-filesystem atomic replacement, failure cleanup, and last-complete-file preservation.
+    - Persist sort changes and successfully enumerated user-selected folders as complete settings updates without changing unrelated fields.
+    - _Requirements: 13.1, 13.5-13.7_
+  - [~] 14.4 Write Property 17 test for complete settings updates
+    - **Property 17: Settings updates preserve unrelated values.**
+    - Generate valid prior settings, sort changes, folder updates, and persistence outcomes; verify only the requested field changes and in-session sorting survives write failure in at least 100 cases.
+    - **Validates: Requirements 13.5-13.7.**
+  - [~] 14.5 Add platform integration tests for safe settings I/O
+    - Test exact macOS/Linux path selection, invalid/non-absolute XDG fallback, the 1 MiB limit and overflow sentinel, valid and invalid reads, first-file creation, atomic replacement, and injected failures before and during replacement.
+    - Assert the previous complete file survives failures and no temporary file can be mistaken for committed settings.
+    - _Requirements: 13.1-13.7_
+  - [~] 14.6 Implement the startup folder planner and revision-guarded orchestration
+    - Capture the startup working directory once; attempt the persisted last-successful folder first and the working directory second, with typed diagnostics and an operable empty-workspace result after acquisition or enumeration failures.
+    - Carry startup-request and collection revisions through enumeration and first-image decode effects; supersede startup work on newer user actions and discard every stale completion before state mutation.
+    - Emit no activation for an empty collection; emit exactly one decode for the first sorted image; atomically activate only a matching successful decode and leave no startup-selected active image or automatic skip after failure.
+    - _Requirements: 13.8-13.18_
+  - [~] 14.7 Write Property 19 test for startup candidate priority and terminal fallback
+    - **Property 19: Startup candidate planning follows priority and terminates safely.**
+    - Generate optional persisted folders, working-directory results, duplicate paths, and accessibility/enumeration outcomes; verify attempt order, at-most-once attempts, first success, empty collection, and empty-workspace fallback in at least 100 cases.
+    - **Validates: Requirements 13.8-13.12, 13.17.**
+  - [~] 14.8 Write Property 20 test for first-item activation and stale completion rejection
+    - **Property 20: Startup activation is first-item atomic and revision-safe.**
+    - Generate ordered collections, decode outcomes, matching/stale request tokens, and matching/stale collection revisions; verify one first-item plan, atomic success, no activation/no skip on failure, and complete state retention for stale completions in at least 100 cases.
+    - **Validates: Requirements 13.14-13.16, 13.18.**
+  - [~] 14.9 Implement configurable deterministic ordering and state-preserving resort
+    - Extend collection metadata and sorting controls for complete filename, modified time, and file size in ascending or descending order.
+    - Use one total comparator that places missing metadata last and resolves every primary tie by filename UTF-8 bytes then absolute-path UTF-8 bytes ascending, independent of direction.
+    - Apply the comparator to startup/user enumeration and in-session sort changes while retaining active image, per-image history/redo/drafts, preview, and view state by `ImageId`.
+    - _Requirements: 13.13, 13.19-13.21_
+  - [~] 14.10 Write Property 18 test for deterministic ordering and identity retention
+    - **Property 18: Effective image ordering is total, deterministic, and identity-preserving.**
+    - Generate all sort modes, equal primary fields, missing metadata, duplicate filenames with distinct paths, and input permutations; verify the reference order and retained `ImageId` state in at least 100 cases.
+    - **Validates: Requirements 13.13, 13.19-13.21.**
+  - [~] 14.11 Wire startup restoration and sort controls into the desktop host
+    - Load settings before startup planning, execute revision-tagged enumeration/decode work on the existing worker boundary, render safe settings/startup diagnostics and the empty workspace, and expose sort-field/direction controls through reducer commands.
+    - Ensure sort changes persist asynchronously while remaining effective on write failure, and user-opened folder success updates the remembered path without allowing stale startup work to replace the browsing state.
+    - _Requirements: 13.1, 13.5-13.19_
+  - [~] 14.12 Add desktop and hosted-platform integration coverage
+    - With deterministic fake workers, test persisted-folder priority, fallback to startup cwd, cwd acquisition failure, both enumeration failures, empty directories, first-image success/failure without skip, stale enumeration/decode completions, and state-preserving sort changes.
+    - On hosted macOS/Linux runners, test real settings paths and atomic storage adapters plus startup restoration from a temporary last-successful folder.
+    - _Requirements: 13.1-13.21_
+
+- [~] 15. Final startup-restoration checkpoint - Ensure all tests pass
+  - Run formatting, clippy, all 20 property tests with at least 100 cases, core/unit tests, settings platform integration tests, desktop startup integration tests, and applicable hosted macOS/Linux suites; fix failures before completion.
+  - Ensure all tests pass, ask the user if questions arise.
+
 ## Notes
 
 - Tasks marked with `*` are optional test tasks and can be skipped for an MVP; all non-optional tasks are implementation work.
-- Property tests are included because the design defines fifteen correctness properties. Each test task must use `proptest`, run at least 100 cases, and begin with the specified feature/property traceability comment.
+- Property tests are included because the design defines twenty correctness properties. Each test task must use `proptest`, run at least 100 cases, and begin with the specified feature/property traceability comment.
 - Native dialog, package, and cross-platform tests require appropriate hosted macOS/Linux CI capabilities; gated tests must not change the behavior of the pure-core test suite.
 - The new font-remediation tasks 10.1–10.5 are deliberately non-optional because they prevent user-visible data/text loss rather than adding discretionary coverage.
 - The `[x]` state on historical task 9.5 records prior planning progress only. It does not demonstrate a passing quality gate: Property 6 has a known failure, and task 11 must remain incomplete until that failure and all font-remediation validation are resolved.
@@ -294,7 +351,18 @@ Implement the application as a Rust workspace with a platform-independent `image
     { "id": 34, "tasks": ["12.8"] },
     { "id": 35, "tasks": ["12.9"] },
     { "id": 36, "tasks": ["12.10"] },
-    { "id": 37, "tasks": ["12.11"] }
+    { "id": 37, "tasks": ["12.11"] },
+    { "id": 38, "tasks": ["14.1"] },
+    { "id": 39, "tasks": ["14.2"] },
+    { "id": 40, "tasks": ["14.3"] },
+    { "id": 41, "tasks": ["14.4", "14.5"] },
+    { "id": 42, "tasks": ["14.6"] },
+    { "id": 43, "tasks": ["14.7"] },
+    { "id": 44, "tasks": ["14.8"] },
+    { "id": 45, "tasks": ["14.9"] },
+    { "id": 46, "tasks": ["14.10"] },
+    { "id": 47, "tasks": ["14.11"] },
+    { "id": 48, "tasks": ["14.12"] }
   ]
 }
 ```

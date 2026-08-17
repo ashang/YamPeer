@@ -5,11 +5,18 @@
 //! every adapter boundary impossible to construct accidentally.
 
 pub mod keybindings;
+pub mod settings;
 
 pub use keybindings::{
     KeybindingLayerInput, KeybindingParseResult, KeybindingResolution,
     PartialKeybindingConfiguration, ValidatedKeybindingConfiguration,
     format_keybinding_configuration, parse_keybinding_configuration, resolve_keybindings,
+};
+pub use settings::{
+    APP_SETTINGS_BOUNDED_READ_LIMIT, APP_SETTINGS_SIZE_LIMIT, APP_SETTINGS_VERSION, AppSettings,
+    BoundedSettingsBytes, SettingsDiagnostic, SettingsDiagnosticKind, SettingsInput,
+    SettingsLoadOutcome, SettingsValidationError, SortDirection, SortField, SortSettings,
+    decode_app_settings, encode_app_settings,
 };
 
 use std::{collections::BTreeMap, fmt, path::Path};
