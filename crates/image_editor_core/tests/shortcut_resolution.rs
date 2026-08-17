@@ -211,7 +211,7 @@ fn shortcut_labels_are_derived_from_configured_gestures() {
     );
     assert_eq!(
         shortcut_label(RuntimePlatform::Linux, &linux, KeybindingAction::NextImage,),
-        Some("Right / Down / PageDown / Space".to_owned())
+        Some("Down / Right / PageDown / Space".to_owned())
     );
     assert_eq!(
         keybinding_action_for_command(&EditorCommand::CancelCrop),

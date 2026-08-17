@@ -23,10 +23,11 @@ use image_editor_core::{
     AbsolutePath, AdjustmentKind, ApplicationError, Availability, CapabilitySnapshot, CropDraft,
     DirectoryEntry, DirectoryEntryKind, DirectoryEntryLocation, EditorCommand, EditorState, Effect,
     EffectiveKeybindingMap, ErrorCategory, FolderEnumerationInput, ImageFormat, InteractionMode,
-    KeyModifiers, NoticeSeverity, NoticeSubject, PreviewState, RawKeyEvent, Revision,
-    RuntimePlatform, SafeError, ShortcutKey, Utf8FileName, VisibleNotice,
-    keybinding_action_for_command, plan_folder_enumeration, reduce, render_current_editing_result,
-    resolve_shortcut, shortcut_label,
+    KeyModifiers, KeybindingAction, KeybindingDiagnostic, NavigationDirection, NoticeSeverity,
+    NoticeSubject, PanDirection, PreviewState, RawKeyEvent, Revision, RuntimePlatform, SafeError,
+    ShortcutKey, Utf8FileName, VisibleNotice, ZoomDirection, keybinding_action_for_command,
+    plan_folder_enumeration, reduce, render_current_editing_result, resolve_shortcut,
+    shortcut_label,
 };
 use image_editor_platform::PlatformDialogs;
 #[cfg(any(feature = "macos-dialogs", feature = "xdg-portal", feature = "gtk"))]
@@ -37,6 +38,30 @@ use image_editor_platform::{
 };
 
 const MAX_WORKER_THREADS: usize = 4;
+
+/// Host boundary for the only window-mode side effect owned outside the core.
+///
+/// The core deliberately keeps `ToggleFullscreen` state-free. This adapter
+/// sends a request to eframe only after shortcut resolution has accepted one
+/// configured gesture, so a rejected native request cannot mutate editor data.
+trait FullscreenAdapter {
+    fn toggle(&mut self, context: &egui::Context) -> std::result::Result<(), String>;
+}
+
+/// Eframe implementation for the sole primary viewport.
+#[derive(Default)]
+struct EframeFullscreenAdapter {
+    requested_fullscreen: bool,
+}
+
+impl FullscreenAdapter for EframeFullscreenAdapter {
+    fn toggle(&mut self, context: &egui::Context) -> std::result::Result<(), String> {
+        let target = !self.requested_fullscreen;
+        context.send_viewport_cmd(egui::ViewportCommand::Fullscreen(target));
+        self.requested_fullscreen = target;
+        Ok(())
+    }
+}
 
 /// Selects the dialog adapter linked for this platform, or an explicitly
 /// unavailable adapter when packaging did not include one.
@@ -114,12 +139,12 @@ impl PlatformDialogBackend for UnavailableDialogBackend {
 }
 
 /// Starts the only native `eframe` window owned by this process.
-pub fn run() -> eframe::Result {
+pub fn run(explicit_keybindings: Option<AbsolutePath>) -> eframe::Result {
     let native_options = eframe::NativeOptions::default();
     eframe::run_native(
         "Image Editor",
         native_options,
-        Box::new(|creation_context| {
+        Box::new(move |creation_context| {
             // This is the first creation-callback operation. Do not construct
             // the editable workspace until the packaged font is readable,
             // parseable, and registered on the eframe-provided context.
@@ -128,7 +153,7 @@ pub fn run() -> eframe::Result {
                     .and_then(|bootstrapper| bootstrapper.install(&creation_context.egui_ctx)),
             ) {
                 image_editor_desktop::font_bootstrap::StartupRoute::InteractiveEditor => {
-                    Box::new(DesktopApp::new())
+                    Box::new(DesktopApp::new_with_keybindings(explicit_keybindings.clone()))
                 }
                 image_editor_desktop::font_bootstrap::StartupRoute::StartupAvailabilityError(
                     failure,
@@ -162,11 +187,14 @@ pub struct DesktopApp {
     dialogs: UiDialogs,
     registry: Arc<CodecRegistry>,
     keybindings: EffectiveKeybindingMap,
+    keybinding_diagnostics: Vec<KeybindingDiagnostic>,
     state: EditorState,
     workers: WorkerExecutor,
     completions: Receiver<EditorCommand>,
     preview_texture: PreviewTextureCache,
     crop_drag_start: Option<egui::Pos2>,
+    fullscreen_adapter: Box<dyn FullscreenAdapter>,
+    fullscreen_error: Option<String>,
     /// Dialog probes are immutable in the core snapshot, but a service may
     /// disappear after startup. Keep those session-local downgrades visible
     /// and consult the live adapter before rendering either dependent control.
@@ -182,9 +210,13 @@ impl DesktopApp {
             dialogs.folder_picker_available(),
             dialogs.save_picker_available(),
         )));
-        let keybindings =
-            crate::keybindings::resolve_current_startup_keybindings(Self::runtime_platform(), None)
-                .effective_map;
+        let keybinding_resolution =
+            image_editor_desktop::keybindings::resolve_current_startup_keybindings(
+                Self::runtime_platform(),
+                None,
+            );
+        let keybindings = keybinding_resolution.effective_map;
+        let keybinding_diagnostics = keybinding_resolution.diagnostics;
         let state = EditorState::new(registry.snapshot().clone());
         let (completion_sender, completions) = mpsc::channel();
         let workers = WorkerExecutor::new(Arc::clone(&registry), completion_sender);
@@ -193,11 +225,14 @@ impl DesktopApp {
             dialogs,
             registry,
             keybindings,
+            keybinding_diagnostics,
             state,
             workers,
             completions,
             preview_texture: PreviewTextureCache::default(),
             crop_drag_start: None,
+            fullscreen_adapter: Box::new(EframeFullscreenAdapter::default()),
+            fullscreen_error: None,
             runtime_dialog_notices: Vec::new(),
         }
     }
@@ -210,6 +245,20 @@ impl DesktopApp {
             self.workers
                 .submit(WorkerTask::from_effect(effect, capabilities.clone()));
         }
+    }
+
+    /// Executes host-owned window requests without passing them through the
+    /// document reducer. A failed platform request therefore leaves browsing,
+    /// view, history, redo, and preview state untouched.
+    fn dispatch_from_ui(&mut self, context: &egui::Context, command: EditorCommand) {
+        if command == EditorCommand::ToggleFullscreen {
+            match self.fullscreen_adapter.toggle(context) {
+                Ok(()) => self.fullscreen_error = None,
+                Err(error) => self.fullscreen_error = Some(error),
+            }
+            return;
+        }
+        self.dispatch(command);
     }
 
     fn apply_completed_work(&mut self) {
@@ -337,6 +386,8 @@ impl DesktopApp {
         }
     }
 
+    /// Routes after UI construction so a focused text-capable control can mark
+    /// its event as consumed before any effective binding is consulted.
     fn route_keyboard(&mut self, context: &egui::Context) {
         let platform = Self::runtime_platform();
         let consumed_by_text_control = context.wants_keyboard_input();
@@ -349,7 +400,7 @@ impl DesktopApp {
                 .collect::<Vec<_>>()
         });
         for command in commands {
-            self.dispatch(command);
+            self.dispatch_from_ui(context, command);
         }
     }
 
@@ -379,7 +430,8 @@ impl DesktopApp {
         if !enabled {
             response.on_disabled_hover_text(disabled_reason);
         } else if response.clicked() {
-            self.dispatch(command);
+            let context = ui.ctx().clone();
+            self.dispatch_from_ui(&context, command);
         }
     }
 
@@ -516,6 +568,10 @@ impl DesktopApp {
 
     fn render_command_pane(&mut self, ui: &mut egui::Ui) {
         ui.heading("编辑命令");
+        if !self.keybinding_diagnostics.is_empty() || self.fullscreen_error.is_some() {
+            self.render_configuration_notices(ui);
+            ui.separator();
+        }
         let active = self.state.browsing().active().cloned();
         let has_active = active.is_some();
         let no_active_reason = "请先从图像集合中选择一张图像";
@@ -534,6 +590,105 @@ impl DesktopApp {
         let in_crop = matches!(self.state.mode(), InteractionMode::Crop(_));
         let in_adjust = matches!(self.state.mode(), InteractionMode::Adjust(_));
 
+        egui::CollapsingHeader::new("浏览与视图控制")
+            .default_open(false)
+            .show(ui, |ui| {
+                ui.label("浏览");
+                self.command_button(
+                    ui,
+                    "上一张",
+                    EditorCommand::Navigate {
+                        direction: NavigationDirection::Left,
+                    },
+                    has_active,
+                    no_active_reason,
+                );
+                self.command_button(
+                    ui,
+                    "下一张",
+                    EditorCommand::Navigate {
+                        direction: NavigationDirection::Right,
+                    },
+                    has_active,
+                    no_active_reason,
+                );
+                self.command_button(
+                    ui,
+                    "第一张",
+                    EditorCommand::Navigate {
+                        direction: NavigationDirection::Home,
+                    },
+                    has_active,
+                    no_active_reason,
+                );
+                self.command_button(
+                    ui,
+                    "最后一张",
+                    EditorCommand::Navigate {
+                        direction: NavigationDirection::End,
+                    },
+                    has_active,
+                    no_active_reason,
+                );
+
+                ui.separator();
+                ui.label("缩放与视图");
+                self.command_button(
+                    ui,
+                    "适应窗口",
+                    EditorCommand::SetFitToWindow,
+                    has_active,
+                    no_active_reason,
+                );
+                self.command_button(
+                    ui,
+                    "实际大小",
+                    EditorCommand::SetManualZoom { percent: 100 },
+                    has_active,
+                    no_active_reason,
+                );
+                self.command_button(
+                    ui,
+                    "200% 缩放",
+                    EditorCommand::SetManualZoom { percent: 200 },
+                    has_active,
+                    no_active_reason,
+                );
+                self.command_button(
+                    ui,
+                    "放大",
+                    EditorCommand::ZoomByStep {
+                        direction: ZoomDirection::In,
+                    },
+                    has_active,
+                    no_active_reason,
+                );
+                self.command_button(
+                    ui,
+                    "缩小",
+                    EditorCommand::ZoomByStep {
+                        direction: ZoomDirection::Out,
+                    },
+                    has_active,
+                    no_active_reason,
+                );
+                for (label, direction) in [
+                    ("向左平移", PanDirection::Left),
+                    ("向下平移", PanDirection::Down),
+                    ("向上平移", PanDirection::Up),
+                    ("向右平移", PanDirection::Right),
+                ] {
+                    self.command_button(
+                        ui,
+                        label,
+                        EditorCommand::PanCanvas { direction },
+                        has_active,
+                        no_active_reason,
+                    );
+                }
+            });
+
+        ui.separator();
         ui.label("几何变换");
         self.command_button(
             ui,
@@ -703,13 +858,40 @@ impl DesktopApp {
         {
             render_notice(ui, notice);
         }
+
+        ui.separator();
+        ui.label("文件");
+        self.command_button(
+            ui,
+            "切换全屏",
+            EditorCommand::ToggleFullscreen,
+            true,
+            "当前平台不支持全屏切换",
+        );
+
+        egui::CollapsingHeader::new("快捷键帮助 / 命令面板")
+            .default_open(false)
+            .show(ui, |ui| {
+                render_shortcut_help(ui, Self::runtime_platform(), &self.keybindings)
+            });
+    }
+
+    fn render_configuration_notices(&self, ui: &mut egui::Ui) {
+        if !self.keybinding_diagnostics.is_empty() {
+            ui.label("快捷键配置诊断");
+            for diagnostic in &self.keybinding_diagnostics {
+                render_keybinding_diagnostic(ui, diagnostic);
+            }
+        }
+        if let Some(error) = &self.fullscreen_error {
+            ui.colored_label(egui::Color32::LIGHT_RED, format!("全屏: {error}"));
+        }
     }
 }
 
 impl eframe::App for DesktopApp {
     fn update(&mut self, context: &egui::Context, _: &mut eframe::Frame) {
         self.apply_completed_work();
-        self.route_keyboard(context);
         self.synchronize_preview_texture(context);
 
         egui::SidePanel::left("image-collection")
@@ -721,6 +903,10 @@ impl eframe::App for DesktopApp {
             .default_width(210.0)
             .show(context, |ui| self.render_command_pane(ui));
         egui::CentralPanel::default().show(context, |ui| self.render_preview_pane(ui));
+
+        // Text widgets have had an opportunity to consume their events before
+        // the shared shortcut resolver sees the raw key stream.
+        self.route_keyboard(context);
 
         if !self.state.pending().is_empty() {
             context.request_repaint_after(Duration::from_millis(16));
@@ -775,7 +961,9 @@ fn raw_key_event(
     };
     let modifiers = KeyModifiers {
         command: matches!(platform, RuntimePlatform::MacOs) && modifiers.mac_cmd,
-        control: matches!(platform, RuntimePlatform::Linux) && modifiers.ctrl,
+        // macOS supports the documented Control+Command+F full-screen
+        // gesture, while Linux uses Control as its primary shortcut modifier.
+        control: modifiers.ctrl,
         option: matches!(platform, RuntimePlatform::MacOs) && modifiers.alt,
         alt: matches!(platform, RuntimePlatform::Linux) && modifiers.alt,
         shift: modifiers.shift,
@@ -789,6 +977,100 @@ fn raw_key_event(
     })
 }
 
+#[cfg(test)]
+mod hosted_keybinding_integration_tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    use eframe::egui;
+    use image_editor_core::{
+        EditorCommand, RawKeyEvent, RuntimePlatform, built_in_keybinding_map, resolve_shortcut,
+    };
+
+    use super::{DesktopApp, FullscreenAdapter, raw_key_event};
+
+    struct RecordingFullscreenAdapter {
+        requests: Arc<AtomicUsize>,
+    }
+
+    impl FullscreenAdapter for RecordingFullscreenAdapter {
+        fn toggle(&mut self, _: &egui::Context) -> std::result::Result<(), String> {
+            self.requests.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    fn key_event(key: egui::Key, modifiers: egui::Modifiers) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers,
+        }
+    }
+
+    #[test]
+    fn hosted_platform_fullscreen_variants_request_the_adapter_without_mutating_editor_state() {
+        let macos_control_command = egui::Modifiers {
+            mac_cmd: true,
+            ctrl: true,
+            ..Default::default()
+        };
+        for (platform, event) in [
+            (
+                RuntimePlatform::Linux,
+                key_event(egui::Key::F11, egui::Modifiers::NONE),
+            ),
+            (
+                RuntimePlatform::MacOs,
+                key_event(egui::Key::F11, egui::Modifiers::NONE),
+            ),
+            (
+                RuntimePlatform::MacOs,
+                key_event(egui::Key::F, macos_control_command),
+            ),
+        ] {
+            let raw = raw_key_event(platform, &event, false)
+                .expect("the hosted key event must normalize");
+            assert_eq!(
+                resolve_shortcut(&built_in_keybinding_map(platform), raw),
+                Some(EditorCommand::ToggleFullscreen),
+                "{platform:?} full-screen variant must resolve"
+            );
+
+            let requests = Arc::new(AtomicUsize::new(0));
+            let mut app = DesktopApp::new();
+            app.fullscreen_adapter = Box::new(RecordingFullscreenAdapter {
+                requests: Arc::clone(&requests),
+            });
+            let before = app.state.clone();
+            app.dispatch_from_ui(&egui::Context::default(), EditorCommand::ToggleFullscreen);
+
+            assert_eq!(requests.load(Ordering::SeqCst), 1, "{platform:?}");
+            assert_eq!(app.state, before, "full-screen is a host-only effect");
+        }
+    }
+
+    #[test]
+    fn text_input_focus_consumes_printable_bindings_before_the_desktop_router() {
+        let event = key_event(egui::Key::F, egui::Modifiers::NONE);
+        let raw: RawKeyEvent = raw_key_event(RuntimePlatform::Linux, &event, true)
+            .expect("a printable configured key normalizes");
+        let app = DesktopApp::new();
+        let before = app.state.clone();
+
+        assert_eq!(
+            resolve_shortcut(&built_in_keybinding_map(RuntimePlatform::Linux), raw),
+            None,
+            "a focused text control must consume F before the flip binding can execute"
+        );
+        assert_eq!(app.state, before);
+    }
+}
+
 fn command_title(
     platform: RuntimePlatform,
     keybindings: &EffectiveKeybindingMap,
@@ -799,6 +1081,94 @@ fn command_title(
         .and_then(|action| shortcut_label(platform, keybindings, action))
         .map(|shortcut| format!("{label} ({shortcut})"))
         .unwrap_or_else(|| label.to_owned())
+}
+
+fn render_shortcut_help(
+    ui: &mut egui::Ui,
+    platform: RuntimePlatform,
+    keybindings: &EffectiveKeybindingMap,
+) {
+    const GROUPS: [(&str, &[(&str, KeybindingAction)]); 4] = [
+        (
+            "浏览",
+            &[
+                ("上一张", KeybindingAction::PreviousImage),
+                ("下一张", KeybindingAction::NextImage),
+                ("第一张", KeybindingAction::FirstImage),
+                ("最后一张", KeybindingAction::LastImage),
+            ],
+        ),
+        (
+            "缩放与视图",
+            &[
+                ("适应窗口", KeybindingAction::FitToWindow),
+                ("实际大小", KeybindingAction::ZoomActual),
+                ("200% 缩放", KeybindingAction::Zoom200),
+                ("放大", KeybindingAction::ZoomIn),
+                ("缩小", KeybindingAction::ZoomOut),
+                ("向左平移", KeybindingAction::PanLeft),
+                ("向下平移", KeybindingAction::PanDown),
+                ("向上平移", KeybindingAction::PanUp),
+                ("向右平移", KeybindingAction::PanRight),
+            ],
+        ),
+        (
+            "编辑",
+            &[
+                ("水平翻转", KeybindingAction::FlipHorizontal),
+                ("垂直翻转", KeybindingAction::FlipVertical),
+                ("顺时针旋转", KeybindingAction::RotateClockwise90),
+                ("逆时针旋转", KeybindingAction::RotateCounterclockwise90),
+                ("开始裁剪", KeybindingAction::EnterCrop),
+                ("调整亮度", KeybindingAction::FocusBrightness),
+                ("调整对比度", KeybindingAction::FocusContrast),
+                ("增加调整", KeybindingAction::IncreaseAdjustment),
+                ("减少调整", KeybindingAction::DecreaseAdjustment),
+                ("提交调整", KeybindingAction::CommitAdjustment),
+                ("撤销", KeybindingAction::Undo),
+                ("重做", KeybindingAction::Redo),
+            ],
+        ),
+        ("文件", &[("切换全屏", KeybindingAction::ToggleFullscreen)]),
+    ];
+
+    for (group, actions) in GROUPS {
+        ui.strong(group);
+        for (label, action) in actions {
+            ui.horizontal(|ui| {
+                ui.label(*label);
+                ui.weak(
+                    shortcut_label(platform, keybindings, *action)
+                        .unwrap_or_else(|| "未绑定".to_owned()),
+                );
+            });
+        }
+    }
+}
+
+fn render_keybinding_diagnostic(ui: &mut egui::Ui, diagnostic: &KeybindingDiagnostic) {
+    let source = match &diagnostic.source {
+        image_editor_core::KeybindingSource::ExplicitCli(path) => {
+            format!("命令行配置 {}", path.as_str())
+        }
+        image_editor_core::KeybindingSource::Project(path) => {
+            format!("项目配置 {}", path.as_str())
+        }
+        image_editor_core::KeybindingSource::User(path) => {
+            format!("用户配置 {}", path.as_str())
+        }
+        image_editor_core::KeybindingSource::BuiltIn => "内置快捷键".to_owned(),
+    };
+    let declaration = match (diagnostic.action, diagnostic.gesture.as_deref()) {
+        (Some(action), Some(gesture)) => format!("（{}: {gesture}）", action.stable_name()),
+        (Some(action), None) => format!("（{}）", action.stable_name()),
+        (None, Some(gesture)) => format!("（{gesture}）"),
+        (None, None) => String::new(),
+    };
+    ui.colored_label(
+        egui::Color32::YELLOW,
+        format!("{source}{declaration}: {}", diagnostic.safe_message),
+    );
 }
 
 fn source_pixel_coordinate(
@@ -1779,5 +2149,157 @@ mod chinese_text_visual_regression_tests {
 
             assert_bundled_glyphs_rendered(&texts, &expected);
         }
+    }
+}
+
+#[cfg(test)]
+mod configurable_keybinding_workspace_tests {
+    use eframe::egui;
+    use image_editor_core::{
+        EditorCommand, EffectiveKeybindingMap, KeyModifiers, KeybindingAction,
+        KeybindingDiagnostic, KeybindingDiagnosticKind, KeybindingGesture, KeybindingSource,
+        RuntimePlatform, ShortcutKey,
+    };
+
+    use super::{
+        DesktopApp, FullscreenAdapter, command_title, render_keybinding_diagnostic,
+        render_shortcut_help,
+    };
+
+    fn collect_text(shape: &egui::epaint::Shape, texts: &mut Vec<String>) {
+        match shape {
+            egui::epaint::Shape::Text(text) => texts.push(text.galley.job.text.clone()),
+            egui::epaint::Shape::Vec(shapes) => {
+                for shape in shapes {
+                    collect_text(shape, texts);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn rendered_help_with_bindings(
+        platform: RuntimePlatform,
+        keybindings: &EffectiveKeybindingMap,
+    ) -> Vec<String> {
+        let context = egui::Context::default();
+        let output = context.run(egui::RawInput::default(), |context| {
+            egui::CentralPanel::default().show(context, |ui| {
+                render_shortcut_help(ui, platform, keybindings);
+            });
+        });
+        let mut texts = Vec::new();
+        for shape in &output.shapes {
+            collect_text(&shape.shape, &mut texts);
+        }
+        texts
+    }
+
+    fn rendered_help(platform: RuntimePlatform) -> Vec<String> {
+        rendered_help_with_bindings(
+            platform,
+            &image_editor_core::built_in_keybinding_map(platform),
+        )
+    }
+
+    #[test]
+    fn shortcut_help_groups_and_labels_are_derived_from_the_effective_map() {
+        for (platform, fullscreen, undo, adjustment) in [
+            (
+                RuntimePlatform::MacOs,
+                "Control+Command+F / F11",
+                "Command+Z",
+                "Option+Up",
+            ),
+            (RuntimePlatform::Linux, "F11", "Control+Z", "Alt+Up"),
+        ] {
+            let texts = rendered_help(platform);
+            for expected in [
+                "浏览",
+                "缩放与视图",
+                "编辑",
+                "文件",
+                fullscreen,
+                undo,
+                adjustment,
+            ] {
+                assert!(
+                    texts.iter().any(|text| text.contains(expected)),
+                    "{platform:?} shortcut help is missing {expected:?}: {texts:#?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn effective_override_updates_both_button_and_help_labels() {
+        let platform = RuntimePlatform::Linux;
+        let mut bindings = image_editor_core::built_in_keybinding_map(platform)
+            .by_action()
+            .clone();
+        bindings.insert(
+            KeybindingAction::Undo,
+            vec![KeybindingGesture::new(
+                ShortcutKey::Character('q'),
+                KeyModifiers::default(),
+            )],
+        );
+        let effective = EffectiveKeybindingMap::try_from_bindings(bindings)
+            .expect("the fixture override remains conflict-free");
+
+        assert_eq!(
+            command_title(platform, &effective, "撤销", &EditorCommand::Undo),
+            "撤销 (Q)"
+        );
+        let texts = rendered_help_with_bindings(platform, &effective);
+        assert!(texts.iter().any(|text| text == "Q"));
+        assert!(!texts.iter().any(|text| text == "Control+Z"));
+    }
+
+    #[test]
+    fn keybinding_diagnostics_render_in_the_notice_area_format() {
+        let context = egui::Context::default();
+        let diagnostic = KeybindingDiagnostic::new(
+            KeybindingSource::BuiltIn,
+            Some(KeybindingAction::ZoomIn),
+            Some("F".to_owned()),
+            KeybindingDiagnosticKind::DuplicateGesture,
+            "multiple actions use this gesture",
+        );
+        let output = context.run(egui::RawInput::default(), |context| {
+            egui::CentralPanel::default().show(context, |ui| {
+                render_keybinding_diagnostic(ui, &diagnostic);
+            });
+        });
+        let mut texts = Vec::new();
+        for shape in &output.shapes {
+            collect_text(&shape.shape, &mut texts);
+        }
+        assert!(texts.iter().any(|text| {
+            text.contains("内置快捷键（zoom_in: F）: multiple actions use this gesture")
+        }));
+    }
+
+    struct RejectingFullscreenAdapter;
+
+    impl FullscreenAdapter for RejectingFullscreenAdapter {
+        fn toggle(&mut self, _: &egui::Context) -> std::result::Result<(), String> {
+            Err("platform rejected the full-screen request".to_owned())
+        }
+    }
+
+    #[test]
+    fn rejected_fullscreen_request_preserves_editor_state_and_reports_a_notice() {
+        let mut app = DesktopApp::new();
+        app.fullscreen_adapter = Box::new(RejectingFullscreenAdapter);
+        let before = app.state.clone();
+
+        app.dispatch_from_ui(&egui::Context::default(), EditorCommand::ToggleFullscreen);
+
+        assert_eq!(app.state, before);
+        assert_eq!(
+            app.fullscreen_error.as_deref(),
+            Some("platform rejected the full-screen request")
+        );
     }
 }

@@ -27,3 +27,4 @@ zbus = { version = "=5.4.0", default-features = false, features = ["async-io", "
 zvariant = { version = "=5.4.0", default-features = false }
 serde = { version = "=1.0.229", features = ["derive"] }
 toml = "=0.8.23"
+sha2 = "=0.10.9"

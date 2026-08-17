@@ -3,7 +3,7 @@
 //! Cross-platform conformance coverage using a fixed, lossless 16-bit PNG.
 
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering},
 };
 
@@ -51,13 +51,26 @@ fn canonical_image_artifact(image: &image_editor_core::CanonicalImage) -> String
     )
 }
 
+/// Resolves a CI-requested artifact relative to the workspace rather than the
+/// package directory Cargo uses as an integration test's current directory.
+fn ci_artifact_path(path: &Path, manifest_dir: &Path) -> PathBuf {
+    if path.is_absolute() {
+        return path.to_owned();
+    }
+
+    manifest_dir.parent().and_then(Path::parent).map_or_else(
+        || manifest_dir.join(path),
+        |workspace_root| workspace_root.join(path),
+    )
+}
+
 /// Persists a deterministic runner artifact only when CI requests one. The
 /// test itself remains self-contained for local runs.
 fn write_ci_artifact(artifact: &str) {
     let Ok(path) = std::env::var("IMAGE_EDITOR_CONFORMANCE_ARTIFACT") else {
         return;
     };
-    let path = PathBuf::from(path);
+    let path = ci_artifact_path(Path::new(&path), Path::new(env!("CARGO_MANIFEST_DIR")));
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).expect("create CI artifact directory");
     }
@@ -257,6 +270,19 @@ fn run_conformance_sequence(
         ConformanceResult::from_rendered(&rendered, document.history()),
         rendered,
     )
+}
+
+#[test]
+fn relative_ci_artifact_paths_resolve_from_the_workspace_root() {
+    let manifest_dir = Path::new("/workspace/crates/image_editor_codecs");
+    assert_eq!(
+        ci_artifact_path(Path::new("artifacts/macos/conformance.txt"), manifest_dir),
+        PathBuf::from("/workspace/artifacts/macos/conformance.txt")
+    );
+    assert_eq!(
+        ci_artifact_path(Path::new("/tmp/conformance.txt"), manifest_dir),
+        PathBuf::from("/tmp/conformance.txt")
+    );
 }
 
 #[test]

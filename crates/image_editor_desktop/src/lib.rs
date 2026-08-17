@@ -10,6 +10,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use sha2::{Digest, Sha256};
+
 #[cfg(feature = "native-window")]
 pub mod font_bootstrap;
 pub mod keybindings;
@@ -259,6 +261,19 @@ impl PackageProfile {
 
     fn stage_bundled_font(self, package_root: &Path) -> Result<(), ManifestError> {
         let source = Path::new(env!("CARGO_MANIFEST_DIR")).join(BUNDLED_FONT_SOURCE_PATH);
+        let bytes = fs::read(&source).map_err(|source_error| ManifestError::ResourceRead {
+            source: source.clone(),
+            source_error,
+        })?;
+        let actual_sha256 = sha256_hex(&bytes);
+        if actual_sha256 != BUNDLED_FONT_SHA256 {
+            return Err(ManifestError::ResourceChecksum {
+                source,
+                expected: BUNDLED_FONT_SHA256,
+                actual: actual_sha256,
+            });
+        }
+
         let destination = package_root.join(self.bundled_font_resource_path());
         let destination_parent = destination
             .parent()
@@ -267,7 +282,7 @@ impl PackageProfile {
             output: destination_parent.to_owned(),
             source: source_error,
         })?;
-        fs::copy(&source, &destination).map_err(|source_error| ManifestError::ResourceCopy {
+        fs::write(&destination, bytes).map_err(|source_error| ManifestError::ResourceCopy {
             source,
             destination,
             source_error,
@@ -298,6 +313,15 @@ pub enum ManifestError {
         output: PathBuf,
         source: std::io::Error,
     },
+    ResourceRead {
+        source: PathBuf,
+        source_error: std::io::Error,
+    },
+    ResourceChecksum {
+        source: PathBuf,
+        expected: &'static str,
+        actual: String,
+    },
     ResourceCopy {
         source: PathBuf,
         destination: PathBuf,
@@ -314,6 +338,23 @@ impl fmt::Display for ManifestError {
             Self::Write { output, source } => {
                 write!(formatter, "could not write {}: {source}", output.display())
             }
+            Self::ResourceRead {
+                source,
+                source_error,
+            } => write!(
+                formatter,
+                "could not read bundled font {}: {source_error}",
+                source.display()
+            ),
+            Self::ResourceChecksum {
+                source,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "bundled font {} has SHA-256 {actual}, expected {expected}",
+                source.display()
+            ),
             Self::ResourceCopy {
                 source,
                 destination,
@@ -331,11 +372,20 @@ impl fmt::Display for ManifestError {
 impl Error for ManifestError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            Self::UnsupportedProfile(_) => None,
+            Self::UnsupportedProfile(_) | Self::ResourceChecksum { .. } => None,
             Self::Write { source, .. } => Some(source),
-            Self::ResourceCopy { source_error, .. } => Some(source_error),
+            Self::ResourceRead { source_error, .. } | Self::ResourceCopy { source_error, .. } => {
+                Some(source_error)
+            }
         }
     }
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn json_array(values: &[&str]) -> String {
@@ -353,7 +403,7 @@ mod tests {
 
     use super::{
         BUNDLED_FONT_LICENSE, BUNDLED_FONT_NAME, BUNDLED_FONT_SHA256, BUNDLED_FONT_SOURCE_PATH,
-        BUNDLED_FONT_VERSION, LOCKED_RUST_TOOLCHAIN, PackageProfile,
+        BUNDLED_FONT_VERSION, LOCKED_RUST_TOOLCHAIN, PackageProfile, sha256_hex,
     };
 
     #[test]
@@ -390,44 +440,58 @@ mod tests {
     }
 
     #[test]
-    fn metadata_generation_stages_font_and_records_it_in_every_required_output() {
-        let root = std::env::temp_dir().join(format!(
-            "image-editor-package-metadata-test-{}-{}",
-            std::process::id(),
-            std::thread::current().name().unwrap_or("unnamed")
-        ));
-        let capabilities = root.join("capabilities.json");
-        let profile = PackageProfile::LinuxX86_64Portal;
-
-        profile
-            .write_package_metadata(&capabilities)
-            .expect("package metadata should be generated");
-
-        let staged_font = root.join(profile.bundled_font_resource_path());
+    fn metadata_generation_stages_verified_font_for_every_supported_package_profile() {
         let source_font =
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(BUNDLED_FONT_SOURCE_PATH);
+        let source_bytes = fs::read(&source_font).expect("checked-in font should be readable");
         assert_eq!(
-            fs::metadata(&staged_font)
-                .expect("staged font should be readable")
-                .len(),
-            fs::metadata(&source_font)
-                .expect("checked-in font should be readable")
-                .len()
+            sha256_hex(&source_bytes),
+            BUNDLED_FONT_SHA256,
+            "declared checksum must describe the exact checked-in font resource"
         );
-        for output in [
-            capabilities,
-            root.join("package-metadata.json"),
-            root.join("release-licenses.json"),
-            root.join("sbom.spdx.json"),
+
+        for profile in [
+            PackageProfile::MacosAarch64,
+            PackageProfile::LinuxX86_64Portal,
         ] {
-            let contents = fs::read_to_string(&output).expect("metadata output should be readable");
-            assert!(contents.contains(profile.bundled_font_resource_path()));
-            assert!(contents.contains(BUNDLED_FONT_NAME));
-            assert!(contents.contains(BUNDLED_FONT_VERSION));
-            assert!(contents.contains(BUNDLED_FONT_SHA256));
-            assert!(contents.contains(BUNDLED_FONT_LICENSE));
+            let root = std::env::temp_dir().join(format!(
+                "image-editor-package-metadata-test-{}-{}",
+                std::process::id(),
+                profile.platform(),
+            ));
+            let capabilities = root.join("capabilities.json");
+
+            profile
+                .write_package_metadata(&capabilities)
+                .expect("package metadata should be generated");
+
+            let staged_font = root.join(profile.bundled_font_resource_path());
+            assert_eq!(
+                fs::read(&staged_font).expect("staged font should be readable"),
+                source_bytes,
+                "{} package must contain the checksum-verified source font bytes",
+                profile.platform()
+            );
+            for output in [
+                capabilities,
+                root.join("package-metadata.json"),
+                root.join("release-licenses.json"),
+                root.join("sbom.spdx.json"),
+            ] {
+                let contents =
+                    fs::read_to_string(&output).expect("metadata output should be readable");
+                assert!(contents.contains(profile.bundled_font_resource_path()));
+                assert!(contents.contains(BUNDLED_FONT_NAME));
+                assert!(contents.contains(BUNDLED_FONT_VERSION));
+                assert!(contents.contains(BUNDLED_FONT_SHA256));
+                assert!(contents.contains(BUNDLED_FONT_LICENSE));
+                assert!(
+                    contents.contains("system_font_fallback_required\": false")
+                        || output.ends_with("sbom.spdx.json")
+                );
+            }
+            fs::remove_dir_all(root).expect("test-created package metadata should be removable");
         }
-        fs::remove_dir_all(root).expect("test-created package metadata should be removable");
     }
 
     #[test]

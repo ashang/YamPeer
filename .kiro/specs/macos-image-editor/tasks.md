@@ -168,8 +168,8 @@ Implement the application as a Rust workspace with a platform-independent `image
     - Ensure all implemented code paths are reachable from the primary window and all optional feature combinations compile.
     - _Requirements: 1.1-11.5_
 
-- [~] 10. Bundle and register the required Chinese-capable UI font
-  - [-] 10.1 Add the license-compatible bundled font resource and package metadata
+- [x] 10. Bundle and register the required Chinese-capable UI font
+  - [x] 10.1 Add the license-compatible bundled font resource and package metadata
     - Add the approved Noto Sans CJK SC OFL-1.1 resource, or an approved equivalent with identical Required_Text coverage, to the macOS and Linux application resource paths.
     - Record the resource path, font name/version, checksum, and license in package metadata, `capabilities.json`, release-license output, and the SBOM; do not make user-installed system fonts a fallback requirement.
     - _Requirements: 11.6_
@@ -194,7 +194,7 @@ Implement the application as a Rust workspace with a platform-independent `image
   - Ensure all tests pass, ask the user if questions arise.
   - The existing recorded completion of task 9.5 and the prior final checkpoint is not evidence of a clean quality gate: Property 6 is known to be failing and must be repaired and rerun, together with tasks 10.1-10.5, before this checkpoint can be completed.
 
-- [ ] 12. Add configurable keybindings and keyboard image-view controls
+- [x] 12. Add configurable keybindings and keyboard image-view controls
   - [x] 12.1 Extend core action, gesture, and view-state contracts
     - Add stable `KeybindingAction`, normalized `KeybindingGesture`, `EffectiveKeybindingMap`, `KeybindingDiagnostic`, `ViewState`, zoom/pan directions, and view-related `EditorCommand` variants in `image_editor_core`.
     - Implement pure fit-to-window, exact 100%/200%, 1.25 zoom-step clamping, and bounded pan reductions without modifying image histories or source pixels.
@@ -215,32 +215,32 @@ Implement the application as a Rust workspace with a platform-independent `image
     - **Property 13: Layered partial overrides retain valid lower declarations.**
     - Generate ordered layer declarations, parse/read failures, partial action sets, and insertion orders; verify deterministic per-action precedence, fallback, and diagnostics in at least 100 cases.
     - **Validates: Requirements 12.1, 12.3-12.5.**
-  - [-] 12.6 Replace fixed shortcut tables with effective-map routing
+  - [x] 12.6 Replace fixed shortcut tables with effective-map routing
     - Refactor `ShortcutResolver` and `shortcut_label` to use the resolved effective map while retaining one-command-per-pressed-non-repeat-event semantics.
     - Route all existing edit/history/adjustment actions and the new navigation, zoom, pan, and full-screen actions through the same map; ignore every event marked consumed by a text-capable control.
     - _Requirements: 12.3, 12.5, 12.9, 12.12_
-  - [~] 12.7 Write property test for exclusive, text-safe effective bindings
+  - [x] 12.7 Write property test for exclusive, text-safe effective bindings
     - **Property 14: Effective bindings are exclusive and text-safe.**
     - Generate valid/invalid declarations, duplicate normalized gestures, raw press/release/repeat events, and text-consumed events; assert at most one command and no command for rejected or text-consumed events in at least 100 cases.
     - **Validates: Requirements 12.4, 12.5, 12.12.**
-  - [~] 12.8 Wire keyboard image viewing and navigation aliases into the reducer
+  - [x] 12.8 Wire keyboard image viewing and navigation aliases into the reducer
     - Bind `0`, `1`, `2`, `+`/`=`, `-`, and H/J/K/L default actions to the view reducer; recompute and clamp offsets after image, preview-size, or zoom changes and retain view state for unscrollable pan axes or absent active images.
     - Route Left/Up/PageUp, Right/Down/PageDown/Space, Home, and End aliases to the existing atomic navigation commands so boundary/no-active/decode-failure behavior remains shared.
     - _Requirements: 12.3, 12.6-12.9, 12.13_
-  - [~] 12.9 Write property test for view bounds and navigation aliases
+  - [x] 12.9 Write property test for view bounds and navigation aliases
     - **Property 15: View transforms remain bounded and navigation aliases are semantically equivalent.**
     - Generate image/preview dimensions, zoom/pan sequences, and configured navigation aliases; assert scale and offsets remain bounded and aliases emit the same navigation intent in at least 100 cases.
     - **Validates: Requirements 12.6-12.9.**
-  - [~] 12.10 Render effective shortcut labels, help groups, diagnostics, and full-screen toggles
+  - [x] 12.10 Render effective shortcut labels, help groups, diagnostics, and full-screen toggles
     - Update the `egui` command controls and add a shortcut-help/command-palette entry grouped as 浏览、缩放与视图、编辑、文件; derive every label from `EffectiveKeybindingMap` using macOS Command/Option or Linux Control/Alt names.
     - Display configuration diagnostics in the existing notice area, forward text-control consumption before shortcut routing, and invoke the platform full-screen adapter for Linux F11 and macOS F11/Control+Command+F without changing editor state if the adapter fails.
     - _Requirements: 12.4-12.5, 12.10-12.13_
-  - [~] 12.11 Add core, desktop, and hosted platform integration coverage
+  - [x] 12.11 Add core, desktop, and hosted platform integration coverage
     - Add focused examples for built-in defaults, malformed/unknown/illegal TOML diagnostics, explicit CLI read failure, macOS/Linux config paths, effective button/help labels, no-active behavior, and unzoomed pan no-ops.
     - On hosted macOS/Linux runners, mock or exercise full-screen requests and verify F11 plus Control+Command+F platform variants, precedence across all present sources, and text-input focus does not execute printable bindings.
     - _Requirements: 12.1-12.13_
 
-- [~] 13. Final configurable-keybinding checkpoint - Ensure all tests pass
+- [x] 13. Final configurable-keybinding checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes

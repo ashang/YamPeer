@@ -38,3 +38,4 @@ ttf-parser = { workspace = true, optional = true }
 image_editor_codecs = { path = "../image_editor_codecs", default-features = false }
 image_editor_core = { path = "../image_editor_core" }
 image_editor_platform = { path = "../image_editor_platform" }
+sha2.workspace = true

@@ -2648,26 +2648,6 @@ impl KeyModifiers {
         self.shift = true;
         self
     }
-
-    fn is_plain(self, shift: bool) -> bool {
-        !self.command && !self.control && !self.option && !self.alt && self.shift == shift
-    }
-
-    fn is_macos_primary(self, shift: bool) -> bool {
-        self.command && !self.control && !self.option && !self.alt && self.shift == shift
-    }
-
-    fn is_linux_primary(self, shift: bool) -> bool {
-        !self.command && self.control && !self.option && !self.alt && self.shift == shift
-    }
-
-    fn is_macos_adjustment(self) -> bool {
-        !self.command && !self.control && self.option && !self.alt && !self.shift
-    }
-
-    fn is_linux_adjustment(self) -> bool {
-        !self.command && !self.control && !self.option && self.alt && !self.shift
-    }
 }
 
 /// A stable ASCII action identifier used by keybinding configuration and diagnostics.

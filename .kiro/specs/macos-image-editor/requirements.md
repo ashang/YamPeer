@@ -19,7 +19,22 @@ Image Editor 是一款面向 macOS 和 Linux 用户的桌面图片浏览与基�
 - **Redo_Keyboard_Command**：macOS 上的 `Command+Shift+Z`，或 Linux 上的 `Control+Shift+Z`。
 - **Adjustment_Increase_Keyboard_Command**：macOS 上的 `Option+Up`，或 Linux 上的 `Alt+Up`。
 - **Adjustment_Decrease_Keyboard_Command**：macOS 上的 `Option+Down`，或 Linux 上的 `Alt+Down`。
-- **Source_Folder**：用户选择并包含待浏览图片的本地文件夹。
+- **Source_Folder**：Image_Editor 当前成功枚举并用于浏览图片的本地文件夹；Source_Folder 可由用户选择或 Startup_Folder_Planner 在启动时选择。
+- **Last_Successful_Source_Folder**：最近一次由 Image_Editor 成功完成枚举并提交为 Source_Folder 的绝对路径；Image_Editor 通过 App_Settings 跨启动保存该路径。
+- **Startup_Working_Directory**：Image_Editor 在本次进程启动期间获取到的初始工作目录绝对路径；后续进程工作目录变化不改变该值。
+- **Startup_Folder_Planner**：按 Last_Successful_Source_Folder、Startup_Working_Directory 的优先级依次验证候选目录并产生启动枚举请求的 Image_Editor 组件。
+- **Platform_Adapter**：解析平台设置存储位置、获取 Startup_Working_Directory、读取目录元数据并提供平台文件与窗口集成的边界组件。
+- **Settings_Storage_Location**：由 Platform_Adapter 解析的单个 App_Settings 文件路径；macOS 使用用户 Application Support 目录，Linux 使用 `$XDG_CONFIG_HOME` 或其平台默认配置目录。
+- **Sort_Field**：用于排列 Image_Collection 的字段，取值为完整文件名 `full_file_name`、最后修改时间 `modified_time` 或文件字节数 `file_size`。
+- **Sort_Direction**：用于排列 Image_Collection 的方向，取值为升序 `ascending` 或降序 `descending`。
+- **Sort_Settings**：由一个 Sort_Field 和一个 Sort_Direction 组成的有效排序配置；默认值为 `full_file_name` 与 `ascending`。
+- **App_Settings**：Image_Editor 跨启动保存的版本化设置值，包含 Sort_Settings 和可选 Last_Successful_Source_Folder。
+- **App_Settings_Store**：在 Settings_Storage_Location 对 App_Settings 执行有界读取、验证和原子替换写入的组件。
+- **Effective_Sort_Settings**：启动时从有效 App_Settings 读取的 Sort_Settings；App_Settings 缺失、不可读或无效时为默认 Sort_Settings。
+- **Effective_Image_Order**：先按 Effective_Sort_Settings 的 Sort_Field 和 Sort_Direction比较 Direct_Folder_File；当主字段相等时，无论 Sort_Direction 为何，均按完整文件名 UTF-8 字节序升序、再按完整本地路径 UTF-8 字节序升序打破平局；`modified_time` 或 `file_size` 元数据缺失的条目排在具有该元数据的条目之后，并使用相同平局规则。
+- **Startup_Directory_Candidate**：Startup_Folder_Planner 当前验证或请求枚举的 Last_Successful_Source_Folder 或 Startup_Working_Directory。
+- **Startup_Directory_Diagnostic**：标识 Startup_Directory_Candidate 类别和安全失败原因的非阻塞提示；提示不包含设置原始内容、堆栈跟踪或敏感环境值。
+- **Startup_Activation_Plan**：启动目录成功产生非空 Image_Collection 后，针对 Effective_Image_Order 第一项生成的唯一自动解码计划；该计划带有对应目录枚举请求和集合修订的 revision token。
 - **Direct_Folder_File**：Source_Folder 的直接子项中的本地常规文件，不包含 Source_Folder 子目录中的文件。
 - **Portable_Image**：扩展名为 `.jpg`、`.jpeg`、`.png`、`.tif` 或 `.tiff` 的 Direct_Folder_File。
 - **HEIC_Image**：扩展名为 `.heic` 的 Direct_Folder_File。
@@ -28,7 +43,7 @@ Image Editor 是一款面向 macOS 和 Linux 用户的桌面图片浏览与基�
 - **Unavailable_Image**：当前 Image_Format_Capability 指示不可解码的 Portable_Image 或 HEIC_Image。
 - **Unavailable_HEIC_Image**：属于 Unavailable_Image 的 HEIC_Image。
 - **Source_Image_File**：Active_Image 对应的 Supported_Image 文件。
-- **Image_Collection**：Image_Editor 从一个 Source_Folder 读取的 Supported_Image 有序集合；Image_Editor 按每个 Supported_Image 完整文件名（包括扩展名）的 UTF-8 字节序升序排列集合，且相同文件名按其完整本地路径的 UTF-8 字节序升序排列；该顺序定义每个图像的前一项和后一项。
+- **Image_Collection**：Image_Editor 从一个 Source_Folder 读取的 Supported_Image 有序集合；Image_Editor 按 Effective_Image_Order 排列集合，该顺序定义每个图像的前一项、后一项、第一项和最后一项。
 - **Browsing_State**：当前 Source_Folder、Image_Collection、Active_Image、每个 Active_Image 的 Edit_History 和 Redo_History，以及 Preview 内容的组合状态。
 - **Preview**：Image_Editor 用于显示 Active_Image 当前编辑结果的可视区域。
 - **Edit_Operation**：对 Active_Image 应用的水平翻转、垂直翻转、90 度旋转、裁剪、Brightness_Adjustment 或 Contrast_Adjustment。
@@ -84,7 +99,7 @@ Image Editor 是一款面向 macOS 和 Linux 用户的桌面图片浏览与基�
 #### Acceptance Criteria
 
 1. WHERE the Platform_Integration_Capability for selecting a local folder is available, WHEN a user invokes the open-folder action, THE Image_Editor SHALL present a Platform_File_Chooser configured to select one local folder.
-2. WHEN a user selects a Source_Folder, THE Image_Editor SHALL enumerate every Direct_Folder_File, select every Supported_Image, and create the Image_Collection in Image_Collection filename order.
+2. WHEN a user selects a Source_Folder, THE Image_Editor SHALL enumerate every Direct_Folder_File, select every Supported_Image, and create the Image_Collection in Image_Collection order.
 3. IF Image_Editor cannot enumerate a selected Source_Folder, THEN THE Image_Editor SHALL display an Application_Error that identifies the selected Source_Folder and retain the prior Browsing_State.
 4. WHEN Image_Editor creates an Image_Collection, THE Image_Editor SHALL display every Supported_Image in the Image_Collection as a selectable entry containing the Supported_Image file name.
 5. WHEN a user selects a Supported_Image entry, THE Image_Editor SHALL decode the selected Supported_Image before setting the selected Supported_Image as the Active_Image.
@@ -97,14 +112,14 @@ Image Editor 是一款面向 macOS 和 Linux 用户的桌面图片浏览与基�
 
 #### Acceptance Criteria
 
-1. WHEN a user presses the Right Arrow Platform_Keyboard_Command and the Active_Image has a following item in Image_Collection filename order, THE Image_Editor SHALL decode the following item before setting the following item as the Active_Image.
-2. WHEN Image_Editor successfully decodes the following item in Image_Collection filename order, THE Image_Editor SHALL set the following item as the Active_Image and display the Active_Image in the Preview.
-3. WHEN a user presses the Left Arrow Platform_Keyboard_Command and the Active_Image has a preceding item in Image_Collection filename order, THE Image_Editor SHALL decode the preceding item before setting the preceding item as the Active_Image.
-4. WHEN Image_Editor successfully decodes the preceding item in Image_Collection filename order, THE Image_Editor SHALL set the preceding item as the Active_Image and display the Active_Image in the Preview.
-5. WHEN a user presses the Home Platform_Keyboard_Command and the Image_Collection contains at least one Supported_Image, THE Image_Editor SHALL decode the first item in Image_Collection filename order before setting the first item as the Active_Image.
-6. WHEN Image_Editor successfully decodes the first item in Image_Collection filename order, THE Image_Editor SHALL set the first item as the Active_Image and display the Active_Image in the Preview.
-7. WHEN a user presses the End Platform_Keyboard_Command and the Image_Collection contains at least one Supported_Image, THE Image_Editor SHALL decode the last item in Image_Collection filename order before setting the last item as the Active_Image.
-8. WHEN Image_Editor successfully decodes the last item in Image_Collection filename order, THE Image_Editor SHALL set the last item as the Active_Image and display the Active_Image in the Preview.
+1. WHEN a user presses the Right Arrow Platform_Keyboard_Command and the Active_Image has a following item in Image_Collection order, THE Image_Editor SHALL decode the following item before setting the following item as the Active_Image.
+2. WHEN Image_Editor successfully decodes the following item in Image_Collection order, THE Image_Editor SHALL set the following item as the Active_Image and display the Active_Image in the Preview.
+3. WHEN a user presses the Left Arrow Platform_Keyboard_Command and the Active_Image has a preceding item in Image_Collection order, THE Image_Editor SHALL decode the preceding item before setting the preceding item as the Active_Image.
+4. WHEN Image_Editor successfully decodes the preceding item in Image_Collection order, THE Image_Editor SHALL set the preceding item as the Active_Image and display the Active_Image in the Preview.
+5. WHEN a user presses the Home Platform_Keyboard_Command and the Image_Collection contains at least one Supported_Image, THE Image_Editor SHALL decode the first item in Image_Collection order before setting the first item as the Active_Image.
+6. WHEN Image_Editor successfully decodes the first item in Image_Collection order, THE Image_Editor SHALL set the first item as the Active_Image and display the Active_Image in the Preview.
+7. WHEN a user presses the End Platform_Keyboard_Command and the Image_Collection contains at least one Supported_Image, THE Image_Editor SHALL decode the last item in Image_Collection order before setting the last item as the Active_Image.
+8. WHEN Image_Editor successfully decodes the last item in Image_Collection order, THE Image_Editor SHALL set the last item as the Active_Image and display the Active_Image in the Preview.
 9. IF Image_Editor cannot decode a navigation candidate, THEN THE Image_Editor SHALL display an Application_Error that identifies the navigation candidate file name and retain the prior Browsing_State.
 10. WHEN a user presses the Right Arrow Platform_Keyboard_Command and the Active_Image is the last item in the Image_Collection, THE Image_Editor SHALL retain the prior Browsing_State.
 11. WHEN a user presses the Left Arrow Platform_Keyboard_Command and the Active_Image is the first item in the Image_Collection, THE Image_Editor SHALL retain the prior Browsing_State.

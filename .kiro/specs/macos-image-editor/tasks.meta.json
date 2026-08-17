@@ -864,6 +864,11 @@
         "executionId": "b9dec0ea-8b8e-46ec-aafc-4ff14f14360c",
         "chatSessionId": "sess_cbbd3837-d6b7-4f75-9294-43e11ffc7d3e",
         "timestamp": 1786865519414
+      },
+      {
+        "executionId": "dcb74b79-5a93-42bf-bbb2-20b535c29368",
+        "chatSessionId": "sess_aef30f99-5e70-4a97-85ee-79cae082c8ff",
+        "timestamp": 1786914943575
       }
     ],
     "10.2 Implement pre-workspace font bootstrap and safe failure handling": [
@@ -1007,6 +1012,11 @@
         "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
         "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
         "timestamp": 1786878509174
+      },
+      {
+        "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
+        "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
+        "timestamp": 1786893957792
       }
     ],
     "12.8 Wire keyboard image viewing and navigation aliases into the reducer": [
@@ -1014,6 +1024,16 @@
         "executionId": "06bf19ed-6430-49c3-a406-8b05e5c7fe54",
         "chatSessionId": "sess_76b655fd-4e3a-46f4-a97a-b57304e105e1",
         "timestamp": 1786875455975
+      },
+      {
+        "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
+        "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
+        "timestamp": 1786894173560
+      },
+      {
+        "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
+        "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
+        "timestamp": 1786894259430
       }
     ],
     "12.10 Render effective shortcut labels, help groups, diagnostics, and full-screen toggles": [
@@ -1021,6 +1041,11 @@
         "executionId": "06bf19ed-6430-49c3-a406-8b05e5c7fe54",
         "chatSessionId": "sess_76b655fd-4e3a-46f4-a97a-b57304e105e1",
         "timestamp": 1786875456220
+      },
+      {
+        "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
+        "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
+        "timestamp": 1786894384091
       }
     ],
     "13. Final configurable-keybinding checkpoint - Ensure all tests pass": [
@@ -1028,6 +1053,11 @@
         "executionId": "06bf19ed-6430-49c3-a406-8b05e5c7fe54",
         "chatSessionId": "sess_76b655fd-4e3a-46f4-a97a-b57304e105e1",
         "timestamp": 1786875456281
+      },
+      {
+        "executionId": "3a760a10-5ade-4bfb-bdb3-288e259a0947",
+        "chatSessionId": "sess_3ca8b85f-06f3-44cc-bb99-c4f75c9dba5e",
+        "timestamp": 1786895678953
       }
     ],
     "12.3 Write property test for TOML binding round-trip": [
@@ -1069,6 +1099,16 @@
         "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
         "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
         "timestamp": 1786877779908
+      },
+      {
+        "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
+        "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
+        "timestamp": 1786893968937
+      },
+      {
+        "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
+        "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
+        "timestamp": 1786894159308
       }
     ],
     "12.9 Write property test for view bounds and navigation aliases": [
@@ -1076,6 +1116,16 @@
         "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
         "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
         "timestamp": 1786877779978
+      },
+      {
+        "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
+        "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
+        "timestamp": 1786894269369
+      },
+      {
+        "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
+        "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
+        "timestamp": 1786894374188
       }
     ],
     "12.11 Add core, desktop, and hosted platform integration coverage": [
@@ -1083,6 +1133,30 @@
         "executionId": "0257c35e-2933-4a3e-ad08-ba470722f578",
         "chatSessionId": "sess_d8e9829b-9b7c-4066-b17d-0eca661211d0",
         "timestamp": 1786877780031
+      },
+      {
+        "executionId": "3a760a10-5ade-4bfb-bdb3-288e259a0947",
+        "chatSessionId": "sess_3ca8b85f-06f3-44cc-bb99-c4f75c9dba5e",
+        "timestamp": 1786895454734
+      },
+      {
+        "executionId": "3a760a10-5ade-4bfb-bdb3-288e259a0947",
+        "chatSessionId": "sess_3ca8b85f-06f3-44cc-bb99-c4f75c9dba5e",
+        "timestamp": 1786895669414
+      }
+    ],
+    "12. Add configurable keybindings and keyboard image-view controls": [
+      {
+        "executionId": "3a760a10-5ade-4bfb-bdb3-288e259a0947",
+        "chatSessionId": "sess_3ca8b85f-06f3-44cc-bb99-c4f75c9dba5e",
+        "timestamp": 1786895669519
+      }
+    ],
+    "10. Bundle and register the required Chinese-capable UI font": [
+      {
+        "executionId": "dcb74b79-5a93-42bf-bbb2-20b535c29368",
+        "chatSessionId": "sess_aef30f99-5e70-4a97-85ee-79cae082c8ff",
+        "timestamp": 1786914943660
       }
     ]
   }
